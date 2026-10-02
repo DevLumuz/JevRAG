@@ -67,11 +67,52 @@ func cachedRows(ctx context.Context, hf *datasets.Client, cacheFile, dataset, co
 		return rows, err
 	}
 	log.Printf("downloading %s (%s/%s)...", dataset, config, split)
-	rows, err := hf.AllRows(ctx, dataset, config, split)
+	rows, err := downloadRows(ctx, hf, cacheFile+".pages", dataset, config, split)
 	if err != nil {
 		return nil, err
 	}
-	return rows, writeJSON(cacheFile, rows)
+	if err := writeJSON(cacheFile, rows); err != nil {
+		return nil, err
+	}
+	return rows, os.RemoveAll(cacheFile + ".pages")
+}
+
+// downloadRows pages through a split, saving each page under pagesDir as it
+// arrives. Big splits (44k statutes = 443 pages) hit HF rate limits; an
+// interrupted download resumes from the pages already on disk.
+func downloadRows(ctx context.Context, hf *datasets.Client, pagesDir, dataset, config, split string) ([]map[string]any, error) {
+	const pageSize = 100
+	var all []map[string]any
+	for offset, total := 0, -1; total < 0 || offset < total; {
+		pageFile := filepath.Join(pagesDir, fmt.Sprintf("%07d.json", offset))
+		var page datasets.HFResponse
+		ok, err := readJSON(pageFile, &page)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			p, err := hf.Rows(ctx, dataset, config, split, offset, pageSize)
+			if err != nil {
+				return nil, fmt.Errorf("offset %d: %w", offset, err)
+			}
+			page = *p
+			if err := writeJSON(pageFile, page); err != nil {
+				return nil, err
+			}
+		}
+		if len(page.Rows) == 0 {
+			break
+		}
+		for _, rw := range page.Rows {
+			all = append(all, rw.Row)
+		}
+		total = page.NumRowsTotal
+		offset += len(page.Rows)
+		if (offset/pageSize)%50 == 0 {
+			log.Printf("  %d/%d rows", offset, total)
+		}
+	}
+	return all, nil
 }
 
 // loadQuestions returns all KoBLEX questions.
