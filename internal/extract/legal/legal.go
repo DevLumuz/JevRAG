@@ -20,7 +20,7 @@ import (
 var citationRe = regexp.MustCompile(`Article[s]?\s+(\d+(?:-\d+)?)`)
 
 // articleInIndexRe matches "Article. N" in the index_eng field.
-var articleInIndexRe = regexp.MustCompile(`Article\.\s+(\d+(?:-\d+)?)`)
+var articleInIndexRe = regexp.MustCompile(`Article\.\s*(\d+(?:-\d+)?)`)
 
 // ExtractCitations returns all unique article numbers referenced in a statute's
 // content text, in the order first seen. E.g. "Article 3 and Article 22" → ["3","22"].

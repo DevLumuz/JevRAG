@@ -217,6 +217,7 @@ func TestCanonicalKey(t *testing.T) {
 		{"COMMERCIAL ACT / Article. 665 / Liability of Non-Life Insurers", "COMMERCIAL ACT#665"},
 		{"COMMERCIAL ACT / Article. 665", "COMMERCIAL ACT#665"},
 		{"CIVIL ACT / Article. 4-2 / Something", "CIVIL ACT#4-2"},
+		{"PUBLIC INTEREST WHISTLEBLOWER PROTECTION ACT / Article.22 / Request", "PUBLIC INTEREST WHISTLEBLOWER PROTECTION ACT#22"},
 		{"  ODD FORMAT WITHOUT ARTICLE  ", "ODD FORMAT WITHOUT ARTICLE"},
 	}
 	for _, tt := range tests {
