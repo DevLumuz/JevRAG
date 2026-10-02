@@ -20,14 +20,28 @@ type Client interface {
 
 const defaultModel = "gemini-embedding-001"
 
+// Task types recommended by Google for retrieval: documents are embedded as
+// RETRIEVAL_DOCUMENT and the questions that search them as RETRIEVAL_QUERY.
+const (
+	TaskRetrievalDocument = "RETRIEVAL_DOCUMENT"
+	TaskRetrievalQuery    = "RETRIEVAL_QUERY"
+)
+
+// GeminiOptions configures a GeminiClient.
+type GeminiOptions struct {
+	TaskType   string // e.g. TaskRetrievalDocument; empty uses the API default
+	Dimensions int    // output dimensionality (768, 1536, 3072); 0 uses the API default (3072)
+}
+
 // GeminiClient calls the Gemini Embedding API.
 type GeminiClient struct {
 	client *genai.Client
 	model  string
+	config *genai.EmbedContentConfig
 }
 
 // NewGeminiClient creates an embeddings client using the GEMINI_API_KEY env var.
-func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
+func NewGeminiClient(ctx context.Context, opts GeminiOptions) (*GeminiClient, error) {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("embeddings: GEMINI_API_KEY not set")
@@ -41,12 +55,17 @@ func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
 		return nil, fmt.Errorf("embeddings: creating genai client: %w", err)
 	}
 
-	return &GeminiClient{client: client, model: defaultModel}, nil
+	cfg := &genai.EmbedContentConfig{TaskType: opts.TaskType}
+	if opts.Dimensions > 0 {
+		d := int32(opts.Dimensions)
+		cfg.OutputDimensionality = &d
+	}
+	return &GeminiClient{client: client, model: defaultModel, config: cfg}, nil
 }
 
 // Embed returns the embedding for a single text.
 func (g *GeminiClient) Embed(ctx context.Context, text string) ([]float64, error) {
-	result, err := g.client.Models.EmbedContent(ctx, g.model, genai.Text(text), nil)
+	result, err := g.client.Models.EmbedContent(ctx, g.model, genai.Text(text), g.config)
 	if err != nil {
 		return nil, fmt.Errorf("embeddings: embed: %w", err)
 	}
@@ -63,7 +82,7 @@ func (g *GeminiClient) EmbedBatch(ctx context.Context, texts []string) ([][]floa
 		contents = append(contents, genai.Text(t)...)
 	}
 
-	result, err := g.client.Models.EmbedContent(ctx, g.model, contents, nil)
+	result, err := g.client.Models.EmbedContent(ctx, g.model, contents, g.config)
 	if err != nil {
 		return nil, fmt.Errorf("embeddings: batch embed: %w", err)
 	}

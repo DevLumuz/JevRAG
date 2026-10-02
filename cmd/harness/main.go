@@ -41,6 +41,7 @@ type config struct {
 	minScore    float64
 	concurrency int
 	maxJEV      int64
+	dims        int
 	cacheDir    string
 	envFile     string
 	check       bool
@@ -60,6 +61,7 @@ func parseFlags() config {
 	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
 	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded data, graph and embeddings")
 	flag.StringVar(&c.envFile, "env", ".env", "file with API keys (variables already set win)")
+	flag.IntVar(&c.dims, "dims", 768, "embedding dimensions (768, 1536 or 3072)")
 	flag.BoolVar(&c.check, "check", false, "validate data and graph only (no API keys, no embeddings)")
 	flag.Parse()
 	return c
@@ -88,12 +90,16 @@ func run(ctx context.Context, cfg config) error {
 	if cfg.check {
 		return runCheck(ctx, hf, cfg)
 	}
-	emb, err := embeddings.NewGeminiClient(ctx)
+	docEmb, err := embeddings.NewGeminiClient(ctx, embeddings.GeminiOptions{TaskType: embeddings.TaskRetrievalDocument, Dimensions: cfg.dims})
+	if err != nil {
+		return err
+	}
+	queryEmb, err := embeddings.NewGeminiClient(ctx, embeddings.GeminiOptions{TaskType: embeddings.TaskRetrievalQuery, Dimensions: cfg.dims})
 	if err != nil {
 		return err
 	}
 
-	nodes, edges, err := loadGraph(ctx, hf, emb, cfg)
+	nodes, edges, err := loadGraph(ctx, hf, docEmb, cfg)
 	if err != nil {
 		return fmt.Errorf("graph: %w", err)
 	}
@@ -113,7 +119,7 @@ func run(ctx context.Context, cfg config) error {
 	}
 	log.Printf("questions: %d total, dev %d, test %d → running %d (%s)", len(all), len(dev), len(test), len(qs), cfg.mode)
 
-	qEmb, err := queryEmbeddings(ctx, emb, cfg, qs)
+	qEmb, err := queryEmbeddings(ctx, queryEmb, cfg, qs)
 	if err != nil {
 		return fmt.Errorf("query embeddings: %w", err)
 	}
