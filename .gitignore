@@ -1,0 +1,25 @@
+# Secrets (real keys — NEVER commit)
+.env
+.env.*
+!.env.example
+
+# Go
+/harness
+*.exe
+*.test
+*.out
+coverage.html
+
+# Scratch / temp
+/scratch/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cached graph / embeddings (large, regenerable)
+*.graph.json

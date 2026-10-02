@@ -75,20 +75,18 @@ func TestParseKoBLEXRow_MissingField(t *testing.T) {
 
 func TestParseStatuteRow(t *testing.T) {
 	raw := map[string]any{
-		"index":         "상법 665조",
-		"index_eng":     "COMMERCIAL ACT / Article. 665",
-		"hierarchy":     "상법 665조 1항",
-		"hierarchy_eng": "COMMERCIAL ACT / Article. 665 / Paragraph. 1",
-		"content":       "한국어 조문 내용",
-		"content_eng":   "The insurer shall be liable...",
+		"index":       "상법 665조",
+		"index_eng":   "COMMERCIAL ACT / Article. 665 / Liability of Non-Life Insurers",
+		"content":     "한국어 조문 내용",
+		"content_eng": "The insurer shall be liable...",
 	}
 
 	s, err := datasets.ParseStatuteRow(raw)
 	if err != nil {
 		t.Fatalf("ParseStatuteRow() error: %v", err)
 	}
-	if s.HierarchyEng != "COMMERCIAL ACT / Article. 665 / Paragraph. 1" {
-		t.Errorf("HierarchyEng = %q", s.HierarchyEng)
+	if s.IndexEng != "COMMERCIAL ACT / Article. 665 / Liability of Non-Life Insurers" {
+		t.Errorf("IndexEng = %q", s.IndexEng)
 	}
 	if s.ContentEng != "The insurer shall be liable..." {
 		t.Errorf("ContentEng = %q", s.ContentEng)
