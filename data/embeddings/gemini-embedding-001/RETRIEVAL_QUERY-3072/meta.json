@@ -1,0 +1,5 @@
+{
+  "model": "gemini-embedding-001",
+  "task_type": "RETRIEVAL_QUERY",
+  "dims": 3072
+}

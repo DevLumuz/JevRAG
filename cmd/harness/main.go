@@ -53,6 +53,8 @@ type config struct {
 	envFile     string
 	check       bool
 
+	embeddingsDir  string
+	resultsDir     string
 	confirmEmbed   bool
 	maxEmbedTokens int64
 	embedOnly      bool
@@ -73,10 +75,12 @@ func parseFlags() config {
 	flag.Float64Var(&c.minScore, "min-score", 0, "option 1: abstain if the best similarity is below this")
 	flag.IntVar(&c.concurrency, "concurrency", 8, "parallel judge calls per question")
 	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
-	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded data, graph and embeddings")
+	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded dataset rows (regenerable, not tracked)")
 	flag.StringVar(&c.envFile, "env", ".env", "file with API keys (variables already set win)")
 	flag.IntVar(&c.dims, "dims", 3072, "dimensions used for retrieval (stored at 3072; 768/1536 derived locally for free)")
 	flag.BoolVar(&c.check, "check", false, "validate data and graph only (no API keys, no embeddings)")
+	flag.StringVar(&c.embeddingsDir, "embeddings", "data/embeddings", "embedding stores (tracked in git via LFS: they cost money to rebuild)")
+	flag.StringVar(&c.resultsDir, "results", "results", "per-run outputs (tracked in git)")
 	flag.BoolVar(&c.confirmEmbed, "confirm-embed", false, "allow paid embedding calls for texts not yet cached")
 	flag.Int64Var(&c.maxEmbedTokens, "max-embed-tokens", 16_000_000, "estimated-token cap for paid embedding in this run (~US$0.15 per million)")
 	flag.BoolVar(&c.embedOnly, "embed-only", false, "embed the corpus and all questions, then exit")
@@ -220,7 +224,7 @@ func run(ctx context.Context, cfg config) error {
 	report := evaluator.Summarize(outcomes, reportKs)
 	printReport(cfg, report, jevJudge)
 
-	runFile := filepath.Join(cfg.cacheDir, "runs", fmt.Sprintf("%s-option%d-%s.json", time.Now().Format("20060102-150405"), cfg.option, cfg.mode))
+	runFile := filepath.Join(cfg.resultsDir, fmt.Sprintf("%s-option%d-%s.json", time.Now().Format("20060102-150405"), cfg.option, cfg.mode))
 	if err := writeJSON(runFile, outcomes); err != nil {
 		return err
 	}

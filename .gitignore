@@ -25,3 +25,6 @@ Thumbs.db
 *.graph.json
 # Harness cache (downloaded rows, embedded graph, run outputs)
 .cache/
+
+# Atomic-write temp files
+*.tmp

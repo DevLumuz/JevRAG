@@ -51,7 +51,7 @@ func openSpace(ctx context.Context, cfg config, taskType string) (*embedSpace, e
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(cfg.cacheDir, "embeddings", embedModel, fmt.Sprintf("%s-%d", taskType, storeDims))
+	dir := filepath.Join(cfg.embeddingsDir, embedModel, fmt.Sprintf("%s-%d", taskType, storeDims))
 	store, err := embeddings.OpenStore(dir, embeddings.StoreMeta{Model: embedModel, TaskType: taskType, Dims: storeDims})
 	if err != nil {
 		return nil, err
