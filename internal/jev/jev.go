@@ -1,6 +1,10 @@
-// Package jev provides a client interface for TypeSafe's JEV model.
+// Package jev provides a client for TypeSafe's JEV model.
 // JEV is a non-autoregressive decision model that returns typed decisions
 // (Choice, Score, Noul) instead of free text.
+//
+// The wire contract mirrors the official API (POST /v1/systemone, see
+// https://docs.typesafe.ai/api): one request carries a state and several
+// named questions, which JEV answers independently and in parallel.
 package jev
 
 import (
@@ -8,157 +12,188 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"sync"
 )
 
-// Client covers JEV's three primitives.
+// Question is one named judgment about the request's state.
+type Question struct {
+	Type         string `json:"type"` // "choice", "score" or "noul"
+	Instructions any    `json:"instructions,omitempty"`
+	Criteria     any    `json:"criteria,omitempty"`
+}
+
+// Choice builds a question that picks one label. Each label maps to a
+// description of when it applies; an empty description sends the label alone.
+func Choice(instructions string, criteria map[string]string) Question {
+	c := make(map[string]any, len(criteria))
+	for label, desc := range criteria {
+		if desc == "" {
+			c[label] = nil
+		} else {
+			c[label] = desc
+		}
+	}
+	return Question{Type: "choice", Instructions: instructions, Criteria: c}
+}
+
+// Score builds a question that rates the state on ordered levels (index 0 first).
+func Score(instructions string, levels []string) Question {
+	return Question{Type: "score", Instructions: instructions, Criteria: levels}
+}
+
+// Noul builds a yes/no question.
+func Noul(instructions string) Question {
+	return Question{Type: "noul", Instructions: instructions}
+}
+
+// Answer is the answer to one question. Which fields are set depends on Type:
+// choice → Choice, Confidence, Probabilities; score → Score, Confidence,
+// Probabilities (keyed "0", "1"...); noul → Noul.
+type Answer struct {
+	Type          string             `json:"type"`
+	Choice        string             `json:"choice,omitempty"`
+	Score         float64            `json:"score,omitempty"`
+	Noul          float64            `json:"noul,omitempty"`
+	Confidence    float64            `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+}
+
+// Usage reports billable tokens. Output tokens are currently free.
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+// Response holds the answers keyed by the question names in the request.
+type Response struct {
+	Model   string            `json:"model"`
+	Answers map[string]Answer `json:"answers"`
+	Usage   Usage             `json:"usage"`
+}
+
+// Client asks JEV a set of named questions about one state.
 type Client interface {
-	Noul(ctx context.Context, state, question string) (probability float64, err error)
-	Score(ctx context.Context, state, question string, levels []string) (score, confidence float64, err error)
-	Choice(ctx context.Context, state, question string, options []string) (choice string, confidence float64, err error)
+	SystemOne(ctx context.Context, state any, questions map[string]Question) (*Response, error)
 }
 
 // --- Real HTTP client ---
 
-const defaultBaseURL = "https://api.typesafe.ai/v1"
+const (
+	defaultBaseURL = "https://api.typesafe.ai"
+	defaultModel   = "jev-latest"
+	maxErrorBody   = 200
+)
 
-// HTTPClient calls the TypeSafe JEV API.
-type HTTPClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
-}
-
-// Options configures the JEV client.
+// Options configures the JEV client. Empty fields fall back to the
+// TYPESAFE_API_KEY / TYPESAFE_BASE_URL env vars, then to the defaults.
 type Options struct {
+	APIKey     string
 	BaseURL    string
+	Model      string
 	HTTPClient *http.Client
 }
 
-// NewHTTPClient creates a JEV client using the TYPESAGE_API_KEY env var.
+// HTTPClient calls the TypeSafe API.
+type HTTPClient struct {
+	baseURL    string
+	apiKey     string
+	model      string
+	httpClient *http.Client
+}
+
+// NewHTTPClient creates a JEV client.
 func NewHTTPClient(opts Options) (*HTTPClient, error) {
-	apiKey := os.Getenv("TYPESAGE_API_KEY")
+	apiKey := firstNonEmpty(opts.APIKey, os.Getenv("TYPESAFE_API_KEY"))
 	if apiKey == "" {
-		return nil, fmt.Errorf("jev: TYPESAGE_API_KEY not set")
-	}
-	base := opts.BaseURL
-	if base == "" {
-		base = defaultBaseURL
+		return nil, fmt.Errorf("jev: TYPESAFE_API_KEY not set")
 	}
 	hc := opts.HTTPClient
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &HTTPClient{baseURL: base, apiKey: apiKey, httpClient: hc}, nil
+	return &HTTPClient{
+		baseURL:    firstNonEmpty(opts.BaseURL, os.Getenv("TYPESAFE_BASE_URL"), defaultBaseURL),
+		apiKey:     apiKey,
+		model:      firstNonEmpty(opts.Model, defaultModel),
+		httpClient: hc,
+	}, nil
 }
 
-type apiRequest struct {
-	State    string   `json:"state"`
-	Question string   `json:"question"`
-	Options  []string `json:"options,omitempty"`
-	Levels   []string `json:"levels,omitempty"`
+type request struct {
+	State     any                 `json:"state"`
+	Model     string              `json:"model"`
+	Questions map[string]Question `json:"questions"`
 }
 
-type choiceResponse struct {
-	Choice     string  `json:"choice"`
-	Confidence float64 `json:"confidence"`
-}
-
-type scoreResponse struct {
-	Score      float64 `json:"score"`
-	Confidence float64 `json:"confidence"`
-}
-
-type noulResponse struct {
-	Probability float64 `json:"probability"`
-}
-
-func (c *HTTPClient) post(ctx context.Context, endpoint string, body any, result any) error {
-	data, err := json.Marshal(body)
+// SystemOne sends one request to POST /v1/systemone.
+func (c *HTTPClient) SystemOne(ctx context.Context, state any, questions map[string]Question) (*Response, error) {
+	data, err := json.Marshal(request{State: state, Model: c.model, Questions: questions})
 	if err != nil {
-		return fmt.Errorf("jev: marshal: %w", err)
+		return nil, fmt.Errorf("jev: marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/systemone", bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("jev: request: %w", err)
+		return nil, fmt.Errorf("jev: request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("jev: http: %w", err)
+		return nil, fmt.Errorf("jev: http: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("jev: HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		return nil, fmt.Errorf("jev: HTTP %d: %s", resp.StatusCode, body)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-		return fmt.Errorf("jev: decode: %w", err)
+	var out Response
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("jev: decode: %w", err)
 	}
-	return nil
+	return &out, nil
 }
 
-func (c *HTTPClient) Noul(ctx context.Context, state, question string) (float64, error) {
-	var resp noulResponse
-	err := c.post(ctx, "/noul", apiRequest{State: state, Question: question}, &resp)
-	return resp.Probability, err
-}
-
-func (c *HTTPClient) Score(ctx context.Context, state, question string, levels []string) (float64, float64, error) {
-	var resp scoreResponse
-	err := c.post(ctx, "/score", apiRequest{State: state, Question: question, Levels: levels}, &resp)
-	return resp.Score, resp.Confidence, err
-}
-
-func (c *HTTPClient) Choice(ctx context.Context, state, question string, options []string) (string, float64, error) {
-	var resp choiceResponse
-	err := c.post(ctx, "/choice", apiRequest{State: state, Question: question, Options: options}, &resp)
-	return resp.Choice, resp.Confidence, err
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // --- Fake for tests ---
 
-// ChoiceResult holds a pre-configured choice response.
-type ChoiceResult struct {
-	Choice     string
-	Confidence float64
+// Call records one SystemOne invocation on a FakeClient.
+type Call struct {
+	State     any
+	Questions map[string]Question
 }
 
-// ScoreResult holds a pre-configured score response.
-type ScoreResult struct {
-	Score      float64
-	Confidence float64
-}
-
-// FakeClient returns pre-configured responses keyed by question.
+// FakeClient answers with a caller-supplied function and records every call.
+// Safe for concurrent use.
 type FakeClient struct {
-	ChoiceResults map[string]ChoiceResult
-	ScoreResults  map[string]ScoreResult
-	NoulResults   map[string]float64
+	Respond func(state any, questions map[string]Question) (*Response, error)
+
+	mu    sync.Mutex
+	Calls []Call
 }
 
-func (f *FakeClient) Choice(_ context.Context, _, question string, _ []string) (string, float64, error) {
-	if r, ok := f.ChoiceResults[question]; ok {
-		return r.Choice, r.Confidence, nil
+// SystemOne records the call and delegates to Respond.
+func (f *FakeClient) SystemOne(_ context.Context, state any, questions map[string]Question) (*Response, error) {
+	f.mu.Lock()
+	f.Calls = append(f.Calls, Call{State: state, Questions: questions})
+	f.mu.Unlock()
+	if f.Respond == nil {
+		return nil, fmt.Errorf("jev fake: Respond not set")
 	}
-	return "", 0, fmt.Errorf("jev fake: no result for question %q", question)
-}
-
-func (f *FakeClient) Score(_ context.Context, _, question string, _ []string) (float64, float64, error) {
-	if r, ok := f.ScoreResults[question]; ok {
-		return r.Score, r.Confidence, nil
-	}
-	return 0, 0, fmt.Errorf("jev fake: no result for question %q", question)
-}
-
-func (f *FakeClient) Noul(_ context.Context, _, question string) (float64, error) {
-	if p, ok := f.NoulResults[question]; ok {
-		return p, nil
-	}
-	return 0, fmt.Errorf("jev fake: no result for question %q", question)
+	return f.Respond(state, questions)
 }

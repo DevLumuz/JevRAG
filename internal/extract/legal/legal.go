@@ -137,3 +137,40 @@ func BuildEdges(nodes []*graphmodel.Node, statutes []*datasets.StatuteRow) []gra
 
 	return edges
 }
+
+// CanonicalKey reduces an index_eng string to "ACT#article", so a statute
+// ("CIVIL ACT / Article. 40 / Capacity") and a gold context that omits the
+// title or points at one paragraph ("CIVIL ACT / Article. 40") compare equal.
+// Strings without an article number are returned trimmed, unchanged.
+func CanonicalKey(indexEng string) string {
+	num := ExtractArticleNumber(indexEng)
+	if num == "" {
+		return strings.TrimSpace(indexEng)
+	}
+	return ExtractActName(indexEng) + "#" + num
+}
+
+// GoldKeys returns the canonical keys of a KoBLEX question's gold provisions,
+// deduplicated, in order.
+func GoldKeys(row *datasets.KoBLEXRow) []string {
+	idx := make([]string, len(row.Contexts))
+	for i, c := range row.Contexts {
+		idx[i] = c.IndexEng
+	}
+	return CanonicalRanking(idx)
+}
+
+// CanonicalRanking maps a ranked list of index_eng keys to canonical keys,
+// keeping the first occurrence of each so ranks stay meaningful.
+func CanonicalRanking(indexEngs []string) []string {
+	seen := make(map[string]bool, len(indexEngs))
+	out := make([]string, 0, len(indexEngs))
+	for _, s := range indexEngs {
+		k := CanonicalKey(s)
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	return out
+}

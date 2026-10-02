@@ -39,9 +39,9 @@ func TestRecallAtK(t *testing.T) {
 
 func TestMRR(t *testing.T) {
 	tests := []struct {
-		name     string
-		queries  []evaluator.RankedResult
-		want     float64
+		name    string
+		queries []evaluator.RankedResult
+		want    float64
 	}{
 		{
 			"first result correct",
@@ -67,8 +67,8 @@ func TestMRR(t *testing.T) {
 		{
 			"average of two queries",
 			[]evaluator.RankedResult{
-				{Expected: []string{"art_40"}, Got: []string{"art_40"}},        // RR = 1.0
-				{Expected: []string{"art_41"}, Got: []string{"x", "art_41"}},   // RR = 0.5
+				{Expected: []string{"art_40"}, Got: []string{"art_40"}},      // RR = 1.0
+				{Expected: []string{"art_41"}, Got: []string{"x", "art_41"}}, // RR = 0.5
 			},
 			0.75,
 		},
@@ -94,7 +94,7 @@ func TestMRR(t *testing.T) {
 
 func TestAbstentionAccuracy(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		preds []evaluator.AbstentionPrediction
 		want  float64
 	}{
@@ -174,8 +174,8 @@ func TestCosineSimilarity_ZeroVector(t *testing.T) {
 func TestTopKBySimilarity(t *testing.T) {
 	query := []float64{1, 0, 0}
 	candidates := []evaluator.Candidate{
-		{Key: "a", Embedding: []float64{0, 1, 0}},  // orthogonal
-		{Key: "b", Embedding: []float64{1, 0, 0}},  // identical
+		{Key: "a", Embedding: []float64{0, 1, 0}},     // orthogonal
+		{Key: "b", Embedding: []float64{1, 0, 0}},     // identical
 		{Key: "c", Embedding: []float64{0.9, 0.1, 0}}, // close
 	}
 

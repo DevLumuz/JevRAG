@@ -13,7 +13,7 @@ import (
 func TestRows_HappyPath(t *testing.T) {
 	// Fake HF Datasets Server response matching the real envelope.
 	resp := datasets.HFResponse{
-		NumRowsTotal:  226,
+		NumRowsTotal:   226,
 		NumRowsPerPage: 100,
 		Partial:        false,
 		Rows: []datasets.HFRowWrapper{

@@ -208,3 +208,45 @@ func TestExtractArticleNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestCanonicalKey(t *testing.T) {
+	tests := []struct {
+		indexEng string
+		want     string
+	}{
+		{"COMMERCIAL ACT / Article. 665 / Liability of Non-Life Insurers", "COMMERCIAL ACT#665"},
+		{"COMMERCIAL ACT / Article. 665", "COMMERCIAL ACT#665"},
+		{"CIVIL ACT / Article. 4-2 / Something", "CIVIL ACT#4-2"},
+		{"  ODD FORMAT WITHOUT ARTICLE  ", "ODD FORMAT WITHOUT ARTICLE"},
+	}
+	for _, tt := range tests {
+		if got := legal.CanonicalKey(tt.indexEng); got != tt.want {
+			t.Errorf("CanonicalKey(%q) = %q, want %q", tt.indexEng, got, tt.want)
+		}
+	}
+}
+
+func TestGoldKeys(t *testing.T) {
+	row := &datasets.KoBLEXRow{Contexts: []datasets.KoBLEXProvision{
+		{IndexEng: "COMMERCIAL ACT / Article. 665 / Liability"},
+		{IndexEng: "COMMERCIAL ACT / Article. 665"}, // same article, other paragraph
+		{IndexEng: "COMMERCIAL ACT / Article. 666"},
+	}}
+	got := legal.GoldKeys(row)
+	want := []string{"COMMERCIAL ACT#665", "COMMERCIAL ACT#666"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("GoldKeys() = %v, want %v", got, want)
+	}
+}
+
+func TestCanonicalRanking(t *testing.T) {
+	got := legal.CanonicalRanking([]string{
+		"CIVIL ACT / Article. 1 / A",
+		"CIVIL ACT / Article. 1",
+		"CIVIL ACT / Article. 2 / B",
+	})
+	want := []string{"CIVIL ACT#1", "CIVIL ACT#2"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("CanonicalRanking() = %v, want %v", got, want)
+	}
+}

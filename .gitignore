@@ -23,3 +23,5 @@ Thumbs.db
 
 # Cached graph / embeddings (large, regenerable)
 *.graph.json
+# Harness cache (downloaded rows, embedded graph, run outputs)
+.cache/

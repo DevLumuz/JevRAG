@@ -278,13 +278,15 @@ package jev
 
 import "context"
 
-// Client cubre los tres primitivos de JEV.
+// Client refleja la API oficial (POST https://api.typesafe.ai/v1/systemone):
+// un solo request lleva el state y varias preguntas con nombre (choice/score/noul),
+// que JEV contesta en paralelo. La respuesta trae answers por nombre + usage (tokens).
 type Client interface {
-	Noul(ctx context.Context, state, question string) (probability float64, err error)
-	Score(ctx context.Context, state, question string, levels []string) (score, confidence float64, err error)
-	Choice(ctx context.Context, state, question string, options []string) (choice string, confidence float64, err error)
+	SystemOne(ctx context.Context, state any, questions map[string]Question) (*Response, error)
 }
 ```
+
+Las preguntas se construyen con `jev.Choice(instrucciones, criterios)`, `jev.Score(instrucciones, niveles)` y `jev.Noul(instrucciones)`. Clave en `TYPESAFE_API_KEY`; modelo por defecto `jev-latest`. Contrato verificado contra el SDK oficial de Python (`typesafe-sdk`, generado del `openapi.json` de la API).
 
 ```go
 package embeddings
