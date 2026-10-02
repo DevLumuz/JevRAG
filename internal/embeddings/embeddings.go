@@ -58,12 +58,12 @@ func (g *GeminiClient) Embed(ctx context.Context, text string) ([]float64, error
 
 // EmbedBatch returns embeddings for multiple texts in one call.
 func (g *GeminiClient) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
-	parts := make([]genai.Part, len(texts))
-	for i, t := range texts {
-		parts[i] = genai.Text(t)
+	contents := make([]*genai.Content, 0, len(texts))
+	for _, t := range texts {
+		contents = append(contents, genai.Text(t)...)
 	}
 
-	result, err := g.client.Models.EmbedContent(ctx, g.model, parts[0], &genai.EmbedContentConfig{})
+	result, err := g.client.Models.EmbedContent(ctx, g.model, contents, nil)
 	if err != nil {
 		return nil, fmt.Errorf("embeddings: batch embed: %w", err)
 	}
