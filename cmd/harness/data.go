@@ -28,6 +28,13 @@ const (
 	hfConfig            = "default"
 
 	embedBatchSize = 100 // Gemini batch embedding limit per request
+
+	// gemini-embedding-001 reads at most 2,048 tokens per text and drops the
+	// rest. Measured on KoBLEX: ~4.35 chars/token, so 8,500 chars stays just
+	// under the limit. Cutting client-side loses nothing the model would have
+	// seen and avoids paying for text it discards (the corpus has articles of
+	// up to 5.2M chars; this cuts the bill from ~15.7M to ~12.4M tokens).
+	maxEmbedChars = 8500
 )
 
 // loadDotEnv sets KEY=VALUE pairs from path without overriding variables that
@@ -167,7 +174,7 @@ func loadGraph(ctx context.Context, hf *datasets.Client, emb embeddings.Client, 
 	if err != nil || len(vecs) != len(nodes) {
 		texts := make([]string, len(nodes))
 		for i, n := range nodes {
-			texts[i] = n.Content
+			texts[i] = truncateRunes(n.Content, maxEmbedChars)
 		}
 		log.Printf("embedding %d statutes (%d requests)...", len(texts), (len(texts)+embedBatchSize-1)/embedBatchSize)
 		vecs, err = embedAllCached(ctx, emb, texts, vecFile+".chunks")
@@ -219,6 +226,18 @@ func queryEmbeddings(ctx context.Context, emb embeddings.Client, cfg config, qs 
 		cache[q.ID] = vecs[i]
 	}
 	return cache, writeJSON(cacheFile, cache)
+}
+
+// truncateRunes returns s cut to at most n runes, without splitting a rune.
+func truncateRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 // queryText is what gets embedded and judged for a question: the scenario
