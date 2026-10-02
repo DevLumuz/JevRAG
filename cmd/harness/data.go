@@ -11,10 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"jev/internal/datasets"
-	"jev/internal/embeddings"
 	"jev/internal/extract/legal"
 	"jev/internal/graphmodel"
 )
@@ -26,15 +24,6 @@ const (
 	koblexStatutes      = "JihyungL/KoBLEX-statute-eng"
 	koblexStatutesSplit = "corpus"
 	hfConfig            = "default"
-
-	embedBatchSize = 100 // Gemini batch embedding limit per request
-
-	// gemini-embedding-001 reads at most 2,048 tokens per text and drops the
-	// rest. Measured on KoBLEX: ~4.35 chars/token, so 8,500 chars stays just
-	// under the limit. Cutting client-side loses nothing the model would have
-	// seen and avoids paying for text it discards (the corpus has articles of
-	// up to 5.2M chars; this cuts the bill from ~15.7M to ~12.4M tokens).
-	maxEmbedChars = 8500
 )
 
 // loadDotEnv sets KEY=VALUE pairs from path without overriding variables that
@@ -159,158 +148,6 @@ func loadStatutes(ctx context.Context, hf *datasets.Client, cfg config) ([]*grap
 	return nodes, legal.BuildEdges(nodes, statutes), nil
 }
 
-// loadGraph returns the statute nodes with embeddings, plus citation edges.
-// Nodes and edges are rebuilt from the cached rows on every run (fast and
-// deterministic); only the embeddings, the expensive part, are cached, as a
-// binary file in node order.
-func loadGraph(ctx context.Context, hf *datasets.Client, emb embeddings.Client, cfg config) ([]*graphmodel.Node, []graphmodel.Edge, error) {
-	nodes, edges, err := loadStatutes(ctx, hf, cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	vecFile := filepath.Join(cfg.cacheDir, fmt.Sprintf("koblex-statutes.%dd.vectors.bin", cfg.dims))
-	vecs, err := graphmodel.LoadVectors(vecFile)
-	if err != nil || len(vecs) != len(nodes) {
-		texts := make([]string, len(nodes))
-		for i, n := range nodes {
-			texts[i] = truncateRunes(n.Content, maxEmbedChars)
-		}
-		log.Printf("embedding %d statutes (%d requests)...", len(texts), (len(texts)+embedBatchSize-1)/embedBatchSize)
-		vecs, err = embedAllCached(ctx, emb, texts, vecFile+".chunks")
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := graphmodel.SaveVectors(vecFile, vecs); err != nil {
-			return nil, nil, err
-		}
-		if err := os.RemoveAll(vecFile + ".chunks"); err != nil {
-			return nil, nil, err
-		}
-	}
-	for i, n := range nodes {
-		n.Embedding = vecs[i]
-	}
-	return nodes, edges, nil
-}
-
-// queryEmbeddings returns an embedding per question ID, computing only the
-// ones missing from the cache.
-func queryEmbeddings(ctx context.Context, emb embeddings.Client, cfg config, qs []*datasets.KoBLEXRow) (map[string][]float64, error) {
-	cacheFile := filepath.Join(cfg.cacheDir, fmt.Sprintf("koblex-qa.%dd.embeddings.json", cfg.dims))
-	cache := map[string][]float64{}
-	if _, err := readJSON(cacheFile, &cache); err != nil {
-		return nil, err
-	}
-
-	var missing []*datasets.KoBLEXRow
-	for _, q := range qs {
-		if _, ok := cache[q.ID]; !ok {
-			missing = append(missing, q)
-		}
-	}
-	if len(missing) == 0 {
-		return cache, nil
-	}
-
-	texts := make([]string, len(missing))
-	for i, q := range missing {
-		texts[i] = queryText(q)
-	}
-	log.Printf("embedding %d questions...", len(texts))
-	vecs, err := embedAll(ctx, emb, texts)
-	if err != nil {
-		return nil, err
-	}
-	for i, q := range missing {
-		cache[q.ID] = vecs[i]
-	}
-	return cache, writeJSON(cacheFile, cache)
-}
-
-// truncateRunes returns s cut to at most n runes, without splitting a rune.
-func truncateRunes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n])
-}
-
-// queryText is what gets embedded and judged for a question: the scenario
-// (background) plus the question itself, both in English.
-func queryText(q *datasets.KoBLEXRow) string {
-	if q.BackgroundEng == "" {
-		return q.QuestionEng
-	}
-	return q.BackgroundEng + "\n\n" + q.QuestionEng
-}
-
-func embedAll(ctx context.Context, emb embeddings.Client, texts []string) ([][]float64, error) {
-	return embedAllCached(ctx, emb, texts, "")
-}
-
-// embedAllCached embeds texts in batches. When chunkDir is set, each batch is
-// saved as it completes and reused on the next run, so a failure halfway
-// through a paid corpus embedding never pays twice for finished batches.
-// Failed batches are retried with backoff (rate limits, transient errors).
-func embedAllCached(ctx context.Context, emb embeddings.Client, texts []string, chunkDir string) ([][]float64, error) {
-	if chunkDir != "" {
-		if err := os.MkdirAll(chunkDir, 0o755); err != nil {
-			return nil, err
-		}
-	}
-	out := make([][]float64, 0, len(texts))
-	for start := 0; start < len(texts); start += embedBatchSize {
-		end := min(start+embedBatchSize, len(texts))
-		chunkFile := filepath.Join(chunkDir, fmt.Sprintf("%07d.bin", start))
-		if chunkDir != "" {
-			if vecs, err := graphmodel.LoadVectors(chunkFile); err == nil && len(vecs) == end-start {
-				out = append(out, vecs...)
-				continue
-			}
-		}
-
-		vecs, err := embedWithRetry(ctx, emb, texts[start:end])
-		if err != nil {
-			return nil, fmt.Errorf("embedding batch %d-%d: %w", start, end, err)
-		}
-		if chunkDir != "" {
-			if err := graphmodel.SaveVectors(chunkFile, vecs); err != nil {
-				return nil, err
-			}
-		}
-		out = append(out, vecs...)
-		if n := start/embedBatchSize + 1; n%25 == 0 {
-			log.Printf("  %d/%d texts", end, len(texts))
-		}
-	}
-	return out, nil
-}
-
-func embedWithRetry(ctx context.Context, emb embeddings.Client, texts []string) ([][]float64, error) {
-	delay := 2 * time.Second
-	for attempt := 0; ; attempt++ {
-		vecs, err := emb.EmbedBatch(ctx, texts)
-		if err == nil {
-			return vecs, nil
-		}
-		if attempt >= 5 {
-			return nil, err
-		}
-		log.Printf("  embed error (retry %d in %v): %v", attempt+1, delay, err)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
-		}
-		delay *= 2
-	}
-}
-
 // readJSON decodes path into v. It reports false (and no error) if the file
 // does not exist.
 func readJSON(path string, v any) (bool, error) {
@@ -327,6 +164,8 @@ func readJSON(path string, v any) (bool, error) {
 	return true, nil
 }
 
+// writeJSON writes v to path atomically (temp file + rename), so a crash
+// never leaves a half-written cache file behind.
 func writeJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -335,5 +174,9 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

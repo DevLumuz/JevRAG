@@ -38,11 +38,17 @@ var ErrBudgetExceeded = errors.New("judge: JEV input token budget exceeded")
 
 // EdgeState is the state JEV reads for one ScoreEdge call. Field names are
 // referenced by the instructions above with backticks.
+//
+// The IDs are the nodes' Keys: for legal articles they name the act and the
+// article ("CIVIL ACT / Article. 40 / Capacity"), which the body text alone
+// almost never states.
 type EdgeState struct {
-	Query     string   `json:"query"`
-	From      string   `json:"from,omitempty"`
-	Candidate string   `json:"candidate"`
-	Confirmed []string `json:"confirmed,omitempty"`
+	Query       string   `json:"query"`
+	FromID      string   `json:"from_id,omitempty"`
+	From        string   `json:"from,omitempty"`
+	CandidateID string   `json:"candidate_id"`
+	Candidate   string   `json:"candidate"`
+	Confirmed   []string `json:"confirmed,omitempty"`
 }
 
 // JEVJudge implements Judge with one JEV request per connection. All
@@ -77,9 +83,9 @@ func (j *JEVJudge) ScoreEdge(ctx context.Context, edge graphmodel.Edge, query st
 	if j.MaxInputTokens > 0 && j.inputTokens.Load() >= j.MaxInputTokens {
 		return Decision{}, ErrBudgetExceeded
 	}
-	state := EdgeState{Query: query, Candidate: edge.T.Content}
+	state := EdgeState{Query: query, CandidateID: edge.T.Key, Candidate: edge.T.Content}
 	if edge.F != nil {
-		state.From = edge.F.Content
+		state.FromID, state.From = edge.F.Key, edge.F.Content
 	}
 	for _, n := range confirmed {
 		state.Confirmed = append(state.Confirmed, n.Content)

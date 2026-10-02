@@ -136,11 +136,11 @@ func TestJEVJudge_StateWithoutSource(t *testing.T) {
 	client := &jev.FakeClient{Respond: answers("high", 0.8, 0.6, nil)}
 	j := judge.NewJEVJudge(client)
 
-	if _, err := j.ScoreEdge(context.Background(), graphmodel.Edge{T: &graphmodel.Node{Content: "cand"}}, "q", nil); err != nil {
+	if _, err := j.ScoreEdge(context.Background(), graphmodel.Edge{T: &graphmodel.Node{Key: "CIVIL ACT / Article. 1", Content: "cand"}}, "q", nil); err != nil {
 		t.Fatalf("ScoreEdge() error: %v", err)
 	}
 	st := client.Calls[0].State.(judge.EdgeState)
-	if st.From != "" || st.Candidate != "cand" || st.Query != "q" {
+	if st.From != "" || st.FromID != "" || st.Candidate != "cand" || st.CandidateID != "CIVIL ACT / Article. 1" || st.Query != "q" {
 		t.Errorf("state = %+v", st)
 	}
 }

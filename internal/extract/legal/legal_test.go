@@ -251,3 +251,49 @@ func TestCanonicalRanking(t *testing.T) {
 		t.Errorf("CanonicalRanking() = %v, want %v", got, want)
 	}
 }
+
+func TestActDisplayName(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"COMMERCIAL ACT", "Commercial Act"},
+		{"ENFORCEMENT DECREE OF THE INCOME TAX ACT", "Enforcement Decree of the Income Tax Act"},
+		{"ACT ON THE ESTABLISHMENT, OPERATION, ETC. OF TEACHERS’ UNIONS", "Act on the Establishment, Operation, Etc. of Teachers’ Unions"},
+		{"Enforcement Decree of the Urban Railway Act", "Enforcement Decree of the Urban Railway Act"}, // already mixed case
+	}
+	for _, tt := range tests {
+		if got := legal.ActDisplayName(tt.in); got != tt.want {
+			t.Errorf("ActDisplayName(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestCleanForEmbedding(t *testing.T) {
+	tests := []struct{ name, in, want string }{
+		{"amendment tags", "(1) The insurer shall pay. <Amended on Mar. 2, 2020> (2) Next. <Newly Inserted on Dec. 29, 2021; Feb. 1, 2022>", "(1) The insurer shall pay. (2) Next."},
+		{"bare date tag", "Article 5 Deleted. <Dec. 29, 2020>", "Article 5 Deleted."},
+		{"image refs", "formula:<img id=\"40470045\"></img> applies", "formula: applies"},
+		{"machine translation marker", "%MACHINE_TRANSLATED% Article 1 (Purpose) This Act", "Article 1 (Purpose) This Act"},
+		{"keeps legal brackets without years", "<omitted> text", "<omitted> text"},
+	}
+	for _, tt := range tests {
+		if got := legal.CleanForEmbedding(tt.in); got != tt.want {
+			t.Errorf("%s: CleanForEmbedding() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestEmbeddingText(t *testing.T) {
+	statutes := []*datasets.StatuteRow{{
+		IndexEng:   "COMMERCIAL ACT / Article. 814 / Termination",
+		ContentEng: "%MACHINE_TRANSLATED% Article 814 (Termination) Claims end. <Amended on Mar. 2, 2020>",
+	}}
+	n := legal.StatutesToNodes(statutes)[0]
+	if got, want := legal.EmbeddingText(n), "Commercial Act — Article 814 (Termination) Claims end."; got != want {
+		t.Errorf("EmbeddingText() = %q, want %q", got, want)
+	}
+	if n.Properties["machine_translated"] != "true" {
+		t.Error("machine_translated property not set")
+	}
+	if n.Content != statutes[0].ContentEng {
+		t.Error("node Content must keep the raw text")
+	}
+}

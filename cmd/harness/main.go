@@ -1,11 +1,16 @@
 // Command harness runs one retrieval option over a KoBLEX split and reports
 // the metrics of section 10 of plan.md.
 //
+//	go run ./cmd/harness --check                        # free: data + graph sanity
+//	go run ./cmd/harness --smoke --confirm-embed        # ~US$0.03 live API check
+//	go run ./cmd/harness --embed-only --confirm-embed   # one-time corpus embedding
 //	go run ./cmd/harness --mode=dev --option=1
 //	go run ./cmd/harness --mode=dev --option=2 --limit=10
 //
-// Data, the embedded graph and question embeddings are cached under --cache,
-// so only the first run pays for downloads and corpus embedding.
+// Downloads and embeddings are cached under --cache. Embeddings are keyed by
+// the hash of the exact text embedded, so they are paid for once; any run
+// that would need new (paid) embeddings prints an estimate and stops unless
+// --confirm-embed is given.
 package main
 
 import (
@@ -14,8 +19,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
 	"jev/internal/datasets"
@@ -45,6 +52,13 @@ type config struct {
 	cacheDir    string
 	envFile     string
 	check       bool
+
+	confirmEmbed   bool
+	maxEmbedTokens int64
+	embedOnly      bool
+	smoke          bool
+	queryTask      string
+	queryVariant   string
 }
 
 func parseFlags() config {
@@ -61,8 +75,14 @@ func parseFlags() config {
 	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
 	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded data, graph and embeddings")
 	flag.StringVar(&c.envFile, "env", ".env", "file with API keys (variables already set win)")
-	flag.IntVar(&c.dims, "dims", 768, "embedding dimensions (768, 1536 or 3072)")
+	flag.IntVar(&c.dims, "dims", 3072, "dimensions used for retrieval (stored at 3072; 768/1536 derived locally for free)")
 	flag.BoolVar(&c.check, "check", false, "validate data and graph only (no API keys, no embeddings)")
+	flag.BoolVar(&c.confirmEmbed, "confirm-embed", false, "allow paid embedding calls for texts not yet cached")
+	flag.Int64Var(&c.maxEmbedTokens, "max-embed-tokens", 16_000_000, "estimated-token cap for paid embedding in this run (~US$0.15 per million)")
+	flag.BoolVar(&c.embedOnly, "embed-only", false, "embed the corpus and all questions, then exit")
+	flag.BoolVar(&c.smoke, "smoke", false, "run the live embedding smoke test, then exit (needs --confirm-embed)")
+	flag.StringVar(&c.queryTask, "query-task", "retrieval_query", "task type for question embeddings: retrieval_query or question_answering")
+	flag.StringVar(&c.queryVariant, "query-text", "full", "question text to embed: full (background + question) or question")
 	flag.Parse()
 	return c
 }
@@ -70,7 +90,9 @@ func parseFlags() config {
 func main() {
 	log.SetFlags(0)
 	cfg := parseFlags()
-	if err := run(context.Background(), cfg); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, cfg); err != nil {
 		log.Fatalf("harness: %v", err)
 	}
 }
@@ -90,20 +112,25 @@ func run(ctx context.Context, cfg config) error {
 	if cfg.check {
 		return runCheck(ctx, hf, cfg)
 	}
-	docEmb, err := embeddings.NewGeminiClient(ctx, embeddings.GeminiOptions{TaskType: embeddings.TaskRetrievalDocument, Dimensions: cfg.dims})
-	if err != nil {
-		return err
+	queryTaskType, ok := queryTasks[cfg.queryTask]
+	if !ok {
+		return fmt.Errorf("--query-task must be retrieval_query or question_answering, got %q", cfg.queryTask)
 	}
-	queryEmb, err := embeddings.NewGeminiClient(ctx, embeddings.GeminiOptions{TaskType: embeddings.TaskRetrievalQuery, Dimensions: cfg.dims})
-	if err != nil {
-		return err
+	if cfg.queryVariant != "full" && cfg.queryVariant != "question" {
+		return fmt.Errorf("--query-text must be full or question, got %q", cfg.queryVariant)
+	}
+	if cfg.dims < 1 || cfg.dims > storeDims {
+		return fmt.Errorf("--dims must be in 1..%d, got %d", storeDims, cfg.dims)
 	}
 
-	nodes, edges, err := loadGraph(ctx, hf, docEmb, cfg)
+	nodes, edges, err := loadStatutes(ctx, hf, cfg)
 	if err != nil {
-		return fmt.Errorf("graph: %w", err)
+		return fmt.Errorf("statutes: %w", err)
 	}
 	log.Printf("graph: %d nodes, %d edges", len(nodes), len(edges))
+	if cfg.smoke {
+		return runSmoke(ctx, cfg, nodes)
+	}
 
 	all, err := loadQuestions(ctx, hf, cfg)
 	if err != nil {
@@ -119,9 +146,50 @@ func run(ctx context.Context, cfg config) error {
 	}
 	log.Printf("questions: %d total, dev %d, test %d → running %d (%s)", len(all), len(dev), len(test), len(qs), cfg.mode)
 
-	qEmb, err := queryEmbeddings(ctx, queryEmb, cfg, qs)
+	// Embed the whole corpus and every question (all splits, so a later
+	// test run never needs to pay again) for the selected query variant.
+	docSpace, err := openSpace(ctx, cfg, embeddings.TaskRetrievalDocument)
 	if err != nil {
-		return fmt.Errorf("query embeddings: %w", err)
+		return err
+	}
+	querySpace, err := openSpace(ctx, cfg, queryTaskType)
+	if err != nil {
+		return err
+	}
+	docTexts := make([]string, len(nodes))
+	for i, n := range nodes {
+		docTexts[i] = docText(n)
+	}
+	qTexts := make([]string, len(all))
+	for i, q := range all {
+		qTexts[i] = queryEmbedText(q, cfg.queryVariant)
+	}
+	vecs, err := embedAll(ctx, cfg, []embedJob{
+		{name: "corpus", space: docSpace, texts: docTexts},
+		{name: "questions", space: querySpace, texts: qTexts},
+	})
+	if err != nil {
+		return err
+	}
+	if cfg.embedOnly {
+		log.Printf("embedding done: corpus store %d vectors, question store %d vectors", docSpace.store.Len(), querySpace.store.Len())
+		return nil
+	}
+
+	docVecs, err := reduceAll(vecs[0], cfg.dims)
+	if err != nil {
+		return fmt.Errorf("corpus vectors: %w", err)
+	}
+	for i, n := range nodes {
+		n.Embedding = docVecs[i]
+	}
+	allQVecs, err := reduceAll(vecs[1], cfg.dims)
+	if err != nil {
+		return fmt.Errorf("question vectors: %w", err)
+	}
+	qEmb := make(map[string][]float64, len(all))
+	for i, q := range all {
+		qEmb[q.ID] = allQVecs[i]
 	}
 
 	r, jevJudge, err := buildRetriever(cfg, nodes)

@@ -64,16 +64,20 @@ func ExtractArticleNumber(indexEng string) string {
 func StatutesToNodes(statutes []*datasets.StatuteRow) []*graphmodel.Node {
 	nodes := make([]*graphmodel.Node, len(statutes))
 	for i, s := range statutes {
+		props := map[string]string{
+			"act":            ExtractActName(s.IndexEng),
+			"article_number": ExtractArticleNumber(s.IndexEng),
+			"index":          s.Index,
+		}
+		if strings.Contains(s.ContentEng, machineTranslatedMarker) {
+			props["machine_translated"] = "true"
+		}
 		nodes[i] = &graphmodel.Node{
-			NumericID: int64(i),
-			Key:       s.IndexEng,
-			Content:   s.ContentEng,
-			Label:     "LegalArticle",
-			Properties: map[string]string{
-				"act":            ExtractActName(s.IndexEng),
-				"article_number": ExtractArticleNumber(s.IndexEng),
-				"index":          s.Index,
-			},
+			NumericID:  int64(i),
+			Key:        s.IndexEng,
+			Content:    s.ContentEng,
+			Label:      "LegalArticle",
+			Properties: props,
 		}
 	}
 	return nodes
@@ -173,4 +177,59 @@ func CanonicalRanking(indexEngs []string) []string {
 		}
 	}
 	return out
+}
+
+// --- Embedding text ---
+
+// EmbeddingRecipe names the recipe EmbeddingText implements. Bump it whenever
+// the recipe changes; texts change with it, so cached vectors (keyed by text
+// hash) are never reused for a different recipe.
+const EmbeddingRecipe = "legal-v1"
+
+const machineTranslatedMarker = "%MACHINE_TRANSLATED%"
+
+var (
+	// Editorial tags carrying a year (<Amended on Mar. 2, 2020>, <Dec. 29,
+	// 2020>, <by Act No. 1, Jan. 2, 2019>) and image placeholders with no
+	// content (<img id="1"></img>). They are not legal text.
+	editorialTagRe = regexp.MustCompile(`<(?:/?img[^<>]*|[^<>]*\b(?:19|20)\d\d\b[^<>]*)>`)
+	spacesRe       = regexp.MustCompile(`\s+`)
+	smallWords     = map[string]bool{"a": true, "an": true, "and": true, "as": true, "at": true, "by": true,
+		"for": true, "from": true, "in": true, "of": true, "on": true, "or": true, "the": true, "to": true, "with": true}
+)
+
+// ActDisplayName turns an ALL-CAPS act name into title case, the way acts are
+// cited in prose ("ENFORCEMENT DECREE OF THE INCOME TAX ACT" → "Enforcement
+// Decree of the Income Tax Act"). Names already in mixed case are kept.
+func ActDisplayName(act string) string {
+	if act != strings.ToUpper(act) {
+		return act
+	}
+	words := strings.Fields(strings.ToLower(act))
+	for i, w := range words {
+		if i > 0 && smallWords[w] {
+			continue
+		}
+		r := []rune(w)
+		r[0] = []rune(strings.ToUpper(string(r[0])))[0]
+		words[i] = string(r)
+	}
+	return strings.Join(words, " ")
+}
+
+// CleanForEmbedding removes editorial noise from statute text: amendment and
+// date tags, empty image placeholders and the machine-translation marker.
+// Only the embedded text is cleaned; Node.Content keeps the raw source.
+func CleanForEmbedding(content string) string {
+	s := strings.ReplaceAll(content, machineTranslatedMarker, " ")
+	s = editorialTagRe.ReplaceAllString(s, " ")
+	return strings.TrimSpace(spacesRe.ReplaceAllString(s, " "))
+}
+
+// EmbeddingText is the text embedded for a statute node: the act name, which
+// the article body almost never states (99.7% of KoBLEX), followed by the
+// cleaned content. Everything here is in the corpus row itself; nothing comes
+// from questions or gold answers.
+func EmbeddingText(n *graphmodel.Node) string {
+	return ActDisplayName(n.Properties["act"]) + " — " + CleanForEmbedding(n.Content)
 }
