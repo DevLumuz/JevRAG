@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"jev/internal/datasets"
 )
@@ -103,10 +104,51 @@ func TestRows_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := datasets.NewClient(datasets.Options{BaseURL: srv.URL})
+	c := datasets.NewClient(datasets.Options{BaseURL: srv.URL, Backoff: time.Millisecond})
 	_, err := c.Rows(context.Background(), "any", "default", "test", 0, 10)
 	if err == nil {
 		t.Fatal("expected error on HTTP 429, got nil")
+	}
+}
+
+func TestRows_RetriesRateLimit(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			w.Header().Set("Retry-After", "0")
+			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"rows":[{"row_idx":0,"row":{"a":1}}],"num_rows_total":1}`))
+	}))
+	defer srv.Close()
+
+	c := datasets.NewClient(datasets.Options{BaseURL: srv.URL, Backoff: time.Millisecond})
+	resp, err := c.Rows(context.Background(), "any", "default", "test", 0, 10)
+	if err != nil {
+		t.Fatalf("Rows() error after retries: %v", err)
+	}
+	if calls != 3 || len(resp.Rows) != 1 {
+		t.Errorf("calls = %d, rows = %d; want 3 calls, 1 row", calls, len(resp.Rows))
+	}
+}
+
+func TestRows_NoRetryOnClientError(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "bad", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := datasets.NewClient(datasets.Options{BaseURL: srv.URL, Backoff: time.Millisecond})
+	if _, err := c.Rows(context.Background(), "any", "default", "test", 0, 10); err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1 (404 is not retryable)", calls)
 	}
 }
 

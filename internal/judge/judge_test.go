@@ -176,3 +176,23 @@ func TestJEVJudge_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestJEVJudge_Budget(t *testing.T) {
+	client := &jev.FakeClient{Respond: answers("weak", 0.5, 0.1, nil)} // 100 input tokens per call
+	j := judge.NewJEVJudge(client)
+	j.MaxInputTokens = 250
+
+	var err error
+	calls := 0
+	for ; calls < 10; calls++ {
+		if _, err = j.ScoreEdge(context.Background(), graphmodel.Edge{T: &graphmodel.Node{}}, "q", nil); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, judge.ErrBudgetExceeded) {
+		t.Fatalf("err = %v, want ErrBudgetExceeded", err)
+	}
+	if calls != 3 || len(client.Calls) != 3 {
+		t.Errorf("successful calls = %d, client calls = %d; want 3, 3", calls, len(client.Calls))
+	}
+}

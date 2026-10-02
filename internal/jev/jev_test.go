@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"jev/internal/jev"
 )
@@ -96,13 +97,41 @@ func TestHTTPClient_ErrorIncludesBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c, _ := jev.NewHTTPClient(jev.Options{BaseURL: srv.URL, APIKey: "k"})
+	c, _ := jev.NewHTTPClient(jev.Options{BaseURL: srv.URL, APIKey: "k", Backoff: time.Millisecond})
 	_, err := c.SystemOne(context.Background(), "s", map[string]jev.Question{"x": jev.Noul("?")})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "Field required") {
 		t.Errorf("error = %v, want status and body", err)
+	}
+}
+
+func TestHTTPClient_RetriesOverload(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, 529} {
+		calls := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			b, _ := io.ReadAll(r.Body)
+			if !strings.Contains(string(b), `"questions"`) {
+				t.Errorf("attempt %d sent an empty body", calls)
+			}
+			if calls < 3 {
+				w.WriteHeader(status)
+				return
+			}
+			_, _ = io.WriteString(w, `{"model":"m","answers":{"x":{"type":"noul","noul":0.3}},"usage":{"input_tokens":5}}`)
+		}))
+
+		c, _ := jev.NewHTTPClient(jev.Options{BaseURL: srv.URL, APIKey: "k", Backoff: time.Millisecond})
+		resp, err := c.SystemOne(context.Background(), "s", map[string]jev.Question{"x": jev.Noul("?")})
+		srv.Close()
+		if err != nil {
+			t.Fatalf("status %d: SystemOne() error after retries: %v", status, err)
+		}
+		if calls != 3 || resp.Answers["x"].Noul != 0.3 {
+			t.Errorf("status %d: calls = %d, answer = %+v", status, calls, resp.Answers["x"])
+		}
 	}
 }
 

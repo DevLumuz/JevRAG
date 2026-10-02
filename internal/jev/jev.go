@@ -15,7 +15,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
+	"time"
 )
 
 // Question is one named judgment about the request's state.
@@ -85,6 +87,9 @@ const (
 	defaultBaseURL = "https://api.typesafe.ai"
 	defaultModel   = "jev-latest"
 	maxErrorBody   = 200
+	defaultRetries = 5
+	defaultBackoff = time.Second
+	maxBackoff     = 30 * time.Second
 )
 
 // Options configures the JEV client. Empty fields fall back to the
@@ -94,6 +99,8 @@ type Options struct {
 	BaseURL    string
 	Model      string
 	HTTPClient *http.Client
+	MaxRetries int           // retries on 429/529/5xx; 0 → 5, negative disables
+	Backoff    time.Duration // first retry delay, doubled each time; 0 → 1s
 }
 
 // HTTPClient calls the TypeSafe API.
@@ -102,6 +109,8 @@ type HTTPClient struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	maxRetries int
+	backoff    time.Duration
 }
 
 // NewHTTPClient creates a JEV client.
@@ -114,11 +123,21 @@ func NewHTTPClient(opts Options) (*HTTPClient, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
+	retries := opts.MaxRetries
+	if retries == 0 {
+		retries = defaultRetries
+	}
+	backoff := opts.Backoff
+	if backoff == 0 {
+		backoff = defaultBackoff
+	}
 	return &HTTPClient{
 		baseURL:    firstNonEmpty(opts.BaseURL, os.Getenv("TYPESAFE_BASE_URL"), defaultBaseURL),
 		apiKey:     apiKey,
 		model:      firstNonEmpty(opts.Model, defaultModel),
 		httpClient: hc,
+		maxRetries: max(retries, 0),
+		backoff:    backoff,
 	}, nil
 }
 
@@ -135,30 +154,59 @@ func (c *HTTPClient) SystemOne(ctx context.Context, state any, questions map[str
 		return nil, fmt.Errorf("jev: marshal: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/systemone", bytes.NewReader(data))
+	resp, err := c.post(ctx, data)
 	if err != nil {
-		return nil, fmt.Errorf("jev: request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("jev: http: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("jev: HTTP %d: %s", resp.StatusCode, body)
-	}
 
 	var out Response
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("jev: decode: %w", err)
 	}
 	return &out, nil
+}
+
+// post sends the request, retrying 429 Too Many Requests, 529 Overloaded and
+// other 5xx responses with exponential backoff, as the API docs ask. A
+// retry-after header in seconds overrides the backoff.
+func (c *HTTPClient) post(ctx context.Context, data []byte) (*http.Response, error) {
+	delay := c.backoff
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/systemone", bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("jev: request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("jev: http: %w", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
+		resp.Body.Close()
+
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		if !retryable || attempt >= c.maxRetries {
+			return nil, fmt.Errorf("jev: HTTP %d: %s", resp.StatusCode, body)
+		}
+
+		wait := delay
+		if s, err := strconv.Atoi(resp.Header.Get("retry-after")); err == nil {
+			wait = time.Duration(s) * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		delay = min(delay*2, maxBackoff)
+	}
 }
 
 func firstNonEmpty(vals ...string) string {

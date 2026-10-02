@@ -8,12 +8,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"time"
 )
 
 const (
 	defaultBaseURL = "https://datasets-server.huggingface.co"
 	maxLength      = 100 // HF API hard limit per request
+	defaultRetries = 6
+	defaultBackoff = 2 * time.Second
+	maxBackoff     = time.Minute
 )
 
 // HFResponse is the top-level JSON envelope returned by the /rows endpoint.
@@ -33,9 +38,11 @@ type HFRowWrapper struct {
 
 // Options configures the datasets client.
 type Options struct {
-	BaseURL    string       // overrides the default HF endpoint (useful for tests)
-	Token      string       // optional HF bearer token; increases rate limits
-	HTTPClient *http.Client // optional; defaults to http.DefaultClient
+	BaseURL    string        // overrides the default HF endpoint (useful for tests)
+	Token      string        // optional HF bearer token; increases rate limits
+	HTTPClient *http.Client  // optional; defaults to http.DefaultClient
+	MaxRetries int           // retries on 429/5xx; 0 → 6, negative disables
+	Backoff    time.Duration // first retry delay, doubled each time; 0 → 2s
 }
 
 // Client talks to the HuggingFace Datasets Server.
@@ -43,6 +50,8 @@ type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
+	maxRetries int
+	backoff    time.Duration
 }
 
 // NewClient creates a datasets client with the given options.
@@ -55,10 +64,20 @@ func NewClient(opts Options) *Client {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
+	retries := opts.MaxRetries
+	if retries == 0 {
+		retries = defaultRetries
+	}
+	backoff := opts.Backoff
+	if backoff == 0 {
+		backoff = defaultBackoff
+	}
 	return &Client{
 		baseURL:    base,
 		token:      opts.Token,
 		httpClient: hc,
+		maxRetries: max(retries, 0),
+		backoff:    backoff,
 	}
 }
 
@@ -72,32 +91,19 @@ func (c *Client) Rows(ctx context.Context, dataset, config, split string, offset
 		length = 1
 	}
 
-	url := fmt.Sprintf("%s/rows?dataset=%s&config=%s&split=%s&offset=%s&length=%s",
-		c.baseURL,
-		dataset,
-		config,
-		split,
-		strconv.Itoa(offset),
-		strconv.Itoa(length),
-	)
+	q := url.Values{}
+	q.Set("dataset", dataset)
+	q.Set("config", config)
+	q.Set("split", split)
+	q.Set("offset", strconv.Itoa(offset))
+	q.Set("length", strconv.Itoa(length))
+	u := c.baseURL + "/rows?" + q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := c.get(ctx, u)
 	if err != nil {
-		return nil, fmt.Errorf("datasets: creating request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("datasets: request failed: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("datasets: HTTP %d from %s", resp.StatusCode, url)
-	}
 
 	var result HFResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -126,4 +132,44 @@ func (c *Client) AllRows(ctx context.Context, dataset, config, split string) ([]
 		}
 	}
 	return all, nil
+}
+
+// get performs a GET, retrying rate limits (429) and server errors (5xx) with
+// exponential backoff. A Retry-After header in seconds overrides the backoff.
+func (c *Client) get(ctx context.Context, u string) (*http.Response, error) {
+	delay := c.backoff
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("datasets: creating request: %w", err)
+		}
+		if c.token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("datasets: request failed: %w", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		resp.Body.Close()
+
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		if !retryable || attempt >= c.maxRetries {
+			return nil, fmt.Errorf("datasets: HTTP %d from %s", resp.StatusCode, u)
+		}
+
+		wait := delay
+		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+			wait = time.Duration(s) * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		delay = min(delay*2, maxBackoff)
+	}
 }

@@ -18,9 +18,14 @@ import (
 	"jev/internal/graphmodel"
 )
 
+// KoBLEX lives in two Hugging Face repos, each with a single config and split.
 const (
-	koblexQA       = "JihyungL/KoBLEX-koblex"
-	koblexStatutes = "JihyungL/KoBLEX-statute-eng"
+	koblexQA            = "JihyungL/KoBLEX-koblex"
+	koblexQASplit       = "test"
+	koblexStatutes      = "JihyungL/KoBLEX-statute-eng"
+	koblexStatutesSplit = "corpus"
+	hfConfig            = "default"
+
 	embedBatchSize = 100 // Gemini batch embedding limit per request
 )
 
@@ -71,7 +76,7 @@ func cachedRows(ctx context.Context, hf *datasets.Client, cacheFile, dataset, co
 
 // loadQuestions returns all KoBLEX questions.
 func loadQuestions(ctx context.Context, hf *datasets.Client, cfg config) ([]*datasets.KoBLEXRow, error) {
-	raw, err := cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "koblex-qa.rows.json"), koblexQA, cfg.hfConfig, cfg.hfSplit)
+	raw, err := cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "koblex-qa.rows.json"), koblexQA, hfConfig, koblexQASplit)
 	if err != nil {
 		return nil, err
 	}
@@ -86,16 +91,10 @@ func loadQuestions(ctx context.Context, hf *datasets.Client, cfg config) ([]*dat
 	return qs, nil
 }
 
-// loadGraph returns the statute nodes (with embeddings) and citation edges,
-// building and caching them on first use. Embedding the corpus is the one
-// expensive step, so the result is persisted with graphmodel.SaveGraph.
-func loadGraph(ctx context.Context, hf *datasets.Client, emb embeddings.Client, cfg config) ([]*graphmodel.Node, []graphmodel.Edge, error) {
-	graphFile := filepath.Join(cfg.cacheDir, "koblex.graph.json")
-	if _, err := os.Stat(graphFile); err == nil {
-		return graphmodel.LoadGraph(graphFile)
-	}
-
-	raw, err := cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "koblex-statutes.rows.json"), koblexStatutes, cfg.hfConfig, cfg.hfSplit)
+// loadStatutes returns the statute nodes and citation edges, without
+// embeddings.
+func loadStatutes(ctx context.Context, hf *datasets.Client, cfg config) ([]*graphmodel.Node, []graphmodel.Edge, error) {
+	raw, err := cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "koblex-statutes.rows.json"), koblexStatutes, hfConfig, koblexStatutesSplit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -107,25 +106,35 @@ func loadGraph(ctx context.Context, hf *datasets.Client, emb embeddings.Client, 
 		}
 		statutes = append(statutes, s)
 	}
-
 	nodes := legal.StatutesToNodes(statutes)
-	edges := legal.BuildEdges(nodes, statutes)
+	return nodes, legal.BuildEdges(nodes, statutes), nil
+}
+
+// loadGraph returns the statute nodes (with embeddings) and citation edges,
+// building and caching them on first use. Embedding the corpus is the one
+// expensive step, so the result is persisted with graphmodel.SaveGraph.
+func loadGraph(ctx context.Context, hf *datasets.Client, emb embeddings.Client, cfg config) ([]*graphmodel.Node, []graphmodel.Edge, error) {
+	graphFile := filepath.Join(cfg.cacheDir, "koblex.graph.json")
+	if _, err := os.Stat(graphFile); err == nil {
+		return graphmodel.LoadGraph(graphFile)
+	}
+
+	nodes, edges, err := loadStatutes(ctx, hf, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	texts := make([]string, len(nodes))
 	for i, n := range nodes {
 		texts[i] = n.Content
 	}
-	log.Printf("embedding %d statutes...", len(texts))
+	log.Printf("embedding %d statutes (%d requests)...", len(texts), (len(texts)+embedBatchSize-1)/embedBatchSize)
 	vecs, err := embedAll(ctx, emb, texts)
 	if err != nil {
 		return nil, nil, err
 	}
 	for i, n := range nodes {
 		n.Embedding = vecs[i]
-	}
-
-	if err := os.MkdirAll(cfg.cacheDir, 0o755); err != nil {
-		return nil, nil, err
 	}
 	return nodes, edges, graphmodel.SaveGraph(graphFile, nodes, edges)
 }

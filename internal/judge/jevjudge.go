@@ -2,6 +2,7 @@ package judge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -32,6 +33,9 @@ const sufficientInstructions = "The `candidate` together with the `confirmed` ev
 
 const contradictsInstructions = "The `candidate` contradicts at least one item in `confirmed`."
 
+// ErrBudgetExceeded is returned once the judge has used its token budget.
+var ErrBudgetExceeded = errors.New("judge: JEV input token budget exceeded")
+
 // EdgeState is the state JEV reads for one ScoreEdge call. Field names are
 // referenced by the instructions above with backticks.
 type EdgeState struct {
@@ -53,6 +57,11 @@ type JEVJudge struct {
 	SufficientThreshold    float64
 	ContradictionThreshold float64
 
+	// MaxInputTokens caps billable input tokens across all calls; once
+	// reached, ScoreEdge returns ErrBudgetExceeded. 0 means no cap. Calls
+	// already in flight can overshoot the cap by one request each.
+	MaxInputTokens int64
+
 	inputTokens  atomic.Int64
 	outputTokens atomic.Int64
 }
@@ -65,6 +74,9 @@ func NewJEVJudge(client jev.Client) *JEVJudge {
 // ScoreEdge asks JEV for the relevance tier, sufficiency and, when something
 // is already confirmed, contradiction. Safe for concurrent use.
 func (j *JEVJudge) ScoreEdge(ctx context.Context, edge graphmodel.Edge, query string, confirmed []*graphmodel.Node) (Decision, error) {
+	if j.MaxInputTokens > 0 && j.inputTokens.Load() >= j.MaxInputTokens {
+		return Decision{}, ErrBudgetExceeded
+	}
 	state := EdgeState{Query: query, Candidate: edge.T.Content}
 	if edge.F != nil {
 		state.From = edge.F.Content

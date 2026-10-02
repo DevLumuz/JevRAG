@@ -40,10 +40,10 @@ type config struct {
 	limit       int
 	minScore    float64
 	concurrency int
+	maxJEV      int64
 	cacheDir    string
 	envFile     string
-	hfConfig    string
-	hfSplit     string
+	check       bool
 }
 
 func parseFlags() config {
@@ -57,10 +57,10 @@ func parseFlags() config {
 	flag.IntVar(&c.limit, "limit", 0, "run only the first N questions of the split (0 = all)")
 	flag.Float64Var(&c.minScore, "min-score", 0, "option 1: abstain if the best similarity is below this")
 	flag.IntVar(&c.concurrency, "concurrency", 8, "parallel judge calls per question")
+	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
 	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded data, graph and embeddings")
 	flag.StringVar(&c.envFile, "env", ".env", "file with API keys (variables already set win)")
-	flag.StringVar(&c.hfConfig, "hf-config", "default", "Hugging Face dataset config")
-	flag.StringVar(&c.hfSplit, "hf-split", "train", "Hugging Face dataset split")
+	flag.BoolVar(&c.check, "check", false, "validate data and graph only (no API keys, no embeddings)")
 	flag.Parse()
 	return c
 }
@@ -85,6 +85,9 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	hf := datasets.NewClient(datasets.Options{Token: os.Getenv("HF_TOKEN")})
+	if cfg.check {
+		return runCheck(ctx, hf, cfg)
+	}
 	emb, err := embeddings.NewGeminiClient(ctx)
 	if err != nil {
 		return err
@@ -163,6 +166,7 @@ func buildRetriever(cfg config, nodes []*graphmodel.Node) (retrieval.Retriever, 
 			return nil, nil, err
 		}
 		j := judge.NewJEVJudge(client)
+		j.MaxInputTokens = cfg.maxJEV
 		return &retrieval.JudgedVector{
 			Nodes: nodes, Judge: j, Candidates: cfg.candidates, K: cfg.k, Concurrency: cfg.concurrency,
 		}, j, nil
