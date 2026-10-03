@@ -79,6 +79,12 @@ func pairKey(u, v int) [2]int {
 // specific connections, keyed by pairKey order (min, max); a 0 cuts it.
 // Returns one score per node, summing to 1.
 func (g *Graph) PageRank(reset map[int]float64, override map[[2]int]float64, damping float64) []float64 {
+	return g.pageRank(reset, override, 1, damping)
+}
+
+// pageRank is PageRank where connections absent from override are multiplied
+// by defaultMult instead of 1.
+func (g *Graph) pageRank(reset map[int]float64, override map[[2]int]float64, defaultMult, damping float64) []float64 {
 	n := len(g.Nodes)
 	r := make([]float64, n)
 	total := 0.0
@@ -104,6 +110,8 @@ func (g *Graph) PageRank(reset map[int]float64, override map[[2]int]float64, dam
 			x := a.weight
 			if m, ok := override[pairKey(u, a.to)]; ok {
 				x *= m
+			} else {
+				x *= defaultMult
 			}
 			w[u][j] = x
 			outSum[u] += x
@@ -172,9 +180,13 @@ type GraphPPR struct {
 	// SeedTemp sharpens seed weights: each seed weighs exp((sim − best)/SeedTemp),
 	// so the most similar seed dominates as SeedTemp → 0. 0 uses raw similarity
 	// (near-uniform for close similarities, which lets hubs take over).
-	SeedTemp    float64
-	K           int
-	Concurrency int
+	SeedTemp float64
+	// UnjudgedMult multiplies connections the judge did not score (options
+	// 4–5 only). 1 keeps their static weight; lower values make the walk
+	// trust mostly connections the judge approved. Option 3 always uses 1.
+	UnjudgedMult float64
+	K            int
+	Concurrency  int
 }
 
 // Retrieve returns the top-K nodes by PPR score.
@@ -202,7 +214,11 @@ func (r *GraphPPR) Retrieve(ctx context.Context, q Query) (Result, error) {
 		}
 	}
 
-	scores := g.PageRank(reset, override, r.Damping)
+	mult := 1.0
+	if r.Judge != nil && r.UnjudgedMult > 0 {
+		mult = r.UnjudgedMult
+	}
+	scores := g.pageRank(reset, override, mult, r.Damping)
 	order := make([]int, 0, len(scores))
 	for i, s := range scores {
 		if s > 0 {

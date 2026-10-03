@@ -56,6 +56,7 @@ type config struct {
 	maxCalls    int
 	damping     float64
 	seedTemp    float64
+	unjudged    float64
 	dims        int
 	cacheDir    string
 	envFile     string
@@ -87,6 +88,7 @@ func parseFlags() config {
 	flag.IntVar(&c.hops, "hops", 2, "option 5: how many steps the judge navigates from the seeds")
 	flag.IntVar(&c.maxCalls, "max-judge-calls", 60, "option 5: judge calls per question (seeds + connections)")
 	flag.Float64Var(&c.seedTemp, "seed-temp", 0.05, "options 3-5: seed weight sharpness exp((sim-best)/T); 0 = raw similarity (tuned on dev)")
+	flag.Float64Var(&c.unjudged, "unjudged-mult", 1, "options 4-5: multiplier for connections the judge did not score")
 	flag.Float64Var(&c.damping, "damping", 0.3, "options 3-5: PPR probability of following a connection (HippoRAG: 0.5; 0.3 tuned on dev)")
 	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
 	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded dataset rows (regenerable, not tracked)")
@@ -278,7 +280,7 @@ func buildRetriever(cfg config, nodes []*graphmodel.Node, edges []graphmodel.Edg
 		return &retrieval.GraphPPR{
 			Graph: retrieval.NewGraph(nodes, edges), Judge: j,
 			Seeds: cfg.seeds, Neighbors: cfg.neighbors, Hops: cfg.hops, MaxJudgeCalls: cfg.maxCalls,
-			Damping: cfg.damping, SeedTemp: cfg.seedTemp, K: cfg.k, Concurrency: cfg.concurrency,
+			Damping: cfg.damping, SeedTemp: cfg.seedTemp, UnjudgedMult: cfg.unjudged, K: cfg.k, Concurrency: cfg.concurrency,
 		}, j, nil
 	case 4:
 		return nil, nil, errors.New("option 4 (graph + Gemini judge) is not implemented yet")

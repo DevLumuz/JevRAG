@@ -152,3 +152,24 @@ func TestGraphPPR_AbstainsWhenSeedsIrrelevant(t *testing.T) {
 		t.Errorf("Result = %+v, want abstention", res)
 	}
 }
+
+func TestGraphPPR_UnjudgedMult(t *testing.T) {
+	nodes, edges := chain()
+	fj := &judge.FakeJudge{Decisions: map[string]judge.Decision{"a": {Tier: judge.Direct}, "b": {Tier: judge.Weak}}}
+	run := func(m float64) []string {
+		r := &retrieval.GraphPPR{
+			Graph: retrieval.NewGraph(nodes, edges), Judge: fj, UnjudgedMult: m,
+			Seeds: 1, Neighbors: 5, Hops: 1, MaxJudgeCalls: 20, K: 5, Damping: 0.5,
+		}
+		res, _ := r.Retrieve(context.Background(), retrieval.Query{Text: "q", Embedding: []float64{1, 0}})
+		return res.Keys
+	}
+	// b is weak (not expanded), so b–c is never judged. With a tiny
+	// multiplier on unjudged links almost nothing reaches c and d.
+	if keys := run(1); len(keys) != 4 {
+		t.Errorf("UnjudgedMult 1: keys = %v, want a,b,c,d", keys)
+	}
+	if keys := run(1e-12); len(keys) < 2 || keys[0] != "a" || keys[1] != "b" {
+		t.Errorf("UnjudgedMult ~0: keys = %v, want a then b first", keys)
+	}
+}
