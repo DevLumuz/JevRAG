@@ -565,3 +565,37 @@ Corridas en test, una vez cada una: opciones 1, 2, 3 y 5. El análisis sigue la 
 **H5 — no se cumple.** Abstención 0.62–0.69, lejos de 0.85. El filtro de suficiencia separa (AUC 0.75–0.80) pero no lo bastante.
 
 **Lectura:** en una memoria sin citas, el juez tal como está diseñado (descartar lo que juzga irrelevante, pregunta por pregunta completa) hace daño; dar contexto de la cadena reduce ese daño sin eliminarlo. El grafo inferido sin juez empata con la búsqueda vectorial. Mejoras candidatas, a evaluar solo en dev: que el juez reordene sin descartar, que juzgue contra sub-preguntas (descomposición) en lugar de la pregunta completa, y un filtro de suficiencia con más pasajes.
+
+---
+
+## 22. Plan v2: explorador con cuaderno de evidencia (3 de octubre de 2026)
+
+*Escrito tras tres revisiones independientes (auditoría del banco de pruebas, revisión estratégica, catálogo de arquitecturas) y aprobado para ejecutar.*
+
+### 22.1 Correcciones a lo anterior
+- **Bug corregido:** las opciones de los `choice` y los criterios de los `noul` llegaban a JEV en orden alfabético (mapas de Go). Ahora se envían en el orden escrito (`jev.Ordered`). Todo resultado previo con `choice` está confundido con ese orden.
+- **El "compuesto + rango" del banco (0.81–0.88) era un artefacto** del banco (marca −100 solo en oro no recuperado; negativos limitados a rangos 1–7). Sin él no hay ganancia. v1 leído como 1 − P(irrelevant) empata con los conjuntos nuevos.
+- **Métrica correcta del banco:** ordenar los pasajes de *una misma* pregunta (AUC dentro de la pregunta, contra el orden de embeddings, con IC por pregunta). Así medido, JEV gana claramente en KoBLEX y no significativamente en MuSiQue.
+- **El fallo real son los puentes de paso intermedio:** 9 de 25 nunca llegan al top 30; los demás JEV los separa mal sin contexto.
+- **La abstención medida contra "lo que la búsqueda trajo" fue 0.85;** el límite era la recuperación.
+- **Nunca se comparó JEV contra un reordenador estándar** (bge-reranker, etc.). Es obligatorio antes de afirmar que JEV es la pieza clave.
+
+### 22.2 Arquitectura v2
+Rondas de exploración con un **cuaderno de evidencia**. JEV nunca escribe; escoge, califica y decide:
+1. Búsqueda híbrida (embeddings + BM25) → JEV califica pasajes (**reordena, nunca descarta**).
+2. JEV **escoge frases clave** de los pasajes → cuaderno `{frase textual, fuente, ronda, padre, entidades, requisito que cubre, confianza}`.
+3. Cobertura por requisito sobre el cuaderno → parar, seguir o abstenerse.
+4. Rondas siguientes: búsquedas nuevas desde el cuaderno (pregunta + hechos re-embebidos, BM25 de entidades nuevas, vecinos del grafo); JEV juzga con una vista corta del cuaderno (≤ 8 hechos + 1–3 entidades frontera).
+5. Salida para el agente: el cuaderno (fragmentos con cita, cobertura, huecos, conflictos).
+
+Contra errores que se arrastran: confianza acotada por la del padre, haz de 2 ramas ante duda, poda de ramas estériles, contradicciones marcadas (números y fechas comparados en código), bono por corroboración, guardia contra instrucciones ocultas.
+
+### 22.3 Fases (cada una: pre-registro fechado, ajuste en dev, congelar, una corrida final)
+| Fase | Qué | Puerta |
+|---|---|---|
+| 0 | Banco v2 (negativos de todo el top 30, sin artefacto de rango, etiquetas "relacionado", puente primer paso / intermedio, AUC por pregunta con IC); dev nuevo de MuSiQue (train); BM25 + híbrido; alcance@30/100/300 de puentes intermedios | Línea base honesta |
+| P1 | Pruebas del cuaderno: T1 alcance con hechos oráculo; T2 reconocimiento sin cuaderno / oráculo / hecho equivocado / escogido por JEV; T3 selección de frase clave | Oráculo sube AUC de puentes intermedios ≥ 0.10 y el hecho equivocado no la baja > 0.05 |
+| 1 | JEV contra reordenador estándar (bge-reranker-v2-m3) y combinados | Si el reordenador iguala a JEV (±1 pt) y JEV no suma ≥ 0.02 AUC, JEV deja de ordenar |
+| 2 | Bucle de 2–3 rondas con cuaderno vs. una pasada con el mismo presupuesto | Cadena completa@10 ≥ control + 0.05 (IC excluye 0) |
+| 3 | Cobertura por requisito y abstención (oráculo / LLM pequeño / plantilla) vs. filtro actual y juez LLM | AUROC ≥ 0.85, exactitud balanceada ≥ 0.80 |
+| 4 | Prueba de producto: lector fijo, verificación de citas, español, inyección; ConditionalQA / LegalBench-RAG / MultiHop-RAG; conjunto sellado | Sí/no al producto |
