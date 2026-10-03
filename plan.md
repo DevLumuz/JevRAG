@@ -722,3 +722,19 @@ Lectura: la ganancia del bucle con cuaderno está en el mismo orden que la de lo
 **H9 (primaria):** R@5 del bucle + JEV ≥ R@5 de la opción 2 en test (0.858, §19) y cadena completa@10 ≥ 0.833 (opción 2). Comparación pareada por pregunta contra la opción 2 (`results/20261003-013229-option2-test.json`) con IC95. **Secundaria:** por número de artículos (1, 2, 3), en especial los de 3 artículos; contra la opción 1 (vector) en la misma corrida. Tope de gasto: `--max-jev-tokens 14000000` (~US$0.59).
 
 Corrida: `--dataset koblex --mode test --explore --variants koblex --max-jev-tokens 14000000`.
+
+---
+
+## 30. Resultado H9 (leyes) y síntesis de la revisión con 3 agentes (3 de octubre de 2026)
+
+**H9 — no se cumple.** El presupuesto de JEV se agotó en la pregunta 142 de 156 (las preguntas de KoBLEX traen un caso largo y los artículos son largos: ~14M tokens, US$0.59); se reporta sobre las primeras 142 en el orden del split (desviación registrada; el orden no depende de resultados). `results/20261003-150437-koblex-explore-koblex-test.md`.
+
+| sistema (142 preguntas) | R@5 | cadena@10 | llamadas JEV / pregunta |
+|---|---|---|---|
+| vector (opción 1) | 0.789 | 0.718 | 0 |
+| opción 2: vector + JEV filtra (§19) | **0.854** | **0.831** | 30 |
+| bucle con cuaderno + JEV | 0.853 | 0.803 | 83 |
+
+Bucle − opción 2: R@5 −0.001 (IC95 −0.038..+0.032), cadena@10 −0.028 (−0.070..+0.014). Bucle − vector: cadena@10 +0.085 (+0.028..+0.141). Por artículos (cadena@10, bucle vs opción 2): 1 → 0.95 vs 0.95; 2 → 0.81 vs 0.85; 3 → 0.58 vs 0.62. **Lectura:** en leyes el bucle no supera al filtro simple de JEV y cuesta 2.8×; en KoBLEX los artículos necesarios casi siempre salen en la primera búsqueda (la pregunta trae el caso completo y los artículos hablan del caso), así que no hay puentes que el cuaderno pueda rescatar. El valor del cuaderno depende del tipo de pregunta: grande cuando la cadena tiene eslabones que no se parecen a la pregunta (MuSiQue), nulo cuando todo se parece a la pregunta (KoBLEX).
+
+**Síntesis de la revisión** (detalle en `docs/review/00-sintesis.md` y reportes 01–03).

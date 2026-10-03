@@ -128,6 +128,7 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 	}
 	var rows []row
 	var spent int64
+	stopAt := 0 // > 0: the budget ran out after this many questions
 	for _, v := range variants {
 		r := row{name: v.name}
 		for i, q := range answerable {
@@ -143,7 +144,9 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			r.calls += tr.Calls
 			r.tokens += tr.Tokens
 			if spent += tr.Tokens; cfg.maxJEV > 0 && spent > cfg.maxJEV {
-				return fmt.Errorf("JEV budget reached: %d paid tokens > --max-jev-tokens %d (results so far are cached)", spent, cfg.maxJEV)
+				log.Printf("JEV budget reached (%d paid tokens > --max-jev-tokens %d): reporting the first %d questions only", spent, cfg.maxJEV, i+1)
+				stopAt = i + 1
+				break
 			}
 			if (i+1)%10 == 0 {
 				log.Printf("  %s: %d/%d", v.name, i+1, len(answerable))
@@ -151,9 +154,23 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		}
 		rows = append(rows, r)
 		log.Printf("%s done: %d JEV calls, %d paid tokens", v.name, r.calls, r.tokens)
+		if stopAt > 0 {
+			break
+		}
+	}
+
+	if stopAt > 0 { // compare every system on the same questions
+		answerable = answerable[:stopAt]
+		for i := range rows {
+			rows[i].outcomes = rows[i].outcomes[:min(stopAt, len(rows[i].outcomes))]
+			rows[i].traces = rows[i].traces[:min(stopAt, len(rows[i].traces))]
+		}
 	}
 
 	var b strings.Builder
+	if stopAt > 0 {
+		fmt.Fprintf(&b, "> **Partial run:** the JEV budget ran out; every system is reported on the first %d questions (split order).\n\n", stopAt)
+	}
 	fmt.Fprintf(&b, "# Phase 2 — notebook loop vs. single pass (%s, %s split)\n\n", bench.Name, cfg.mode)
 	fmt.Fprintf(&b, "%d answerable questions · memory %d passages · loop: %d rounds × %d new passages, reads the %d best per round, ≤ 2 facts per passage (P ≥ %.2f), notebook ≤ 8 facts.\n\n",
 		len(answerable), len(bench.Nodes), cfg.exRounds, cfg.exPerRound, cfg.exReadTop, cfg.exFactThreshold)
