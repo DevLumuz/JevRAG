@@ -506,3 +506,24 @@ Medido sobre el split de test, con umbrales ya congelados en dev.
 | Opción 5 | 2 saltos, 5 vecinos por nodo aceptado, máx. 60 llamadas por pregunta, conexiones no juzgadas ×1 | dev: 30 semillas igualan a la opción 2; la variante ×0.25 no mejoró |
 
 Corridas en test, una vez cada una: opciones 1, 2, 3 y 5. El análisis sigue la regla de la sección 17 sin cambios.
+
+---
+
+## 19. Resultados en test (3 de octubre de 2026)
+
+*Una sola corrida por opción con la configuración de la sección 18. Análisis exacto de la sección 17.*
+
+| Opción | R@1 | R@5 | R@10 | Cadena completa@10 | MRR | JEV (tokens · US$) |
+|---|---|---|---|---|---|---|
+| 1 vector | 0.459 | 0.795 | 0.860 | 0.724 | 0.799 | — |
+| 2 vector + JEV | 0.526 | **0.858** | **0.915** | **0.833** | 0.853 | 4.29M · 0.18 |
+| 3 grafo + PPR | 0.465 | 0.767 | 0.850 | 0.712 | 0.796 | — |
+| 5 grafo + JEV | **0.542** | 0.845 | 0.902 | 0.814 | **0.868** | 9.88M · 0.41 |
+
+**H1 (JEV como filtro) — se apoya.** ΔR@5 opción 2 − 1 = +0.063 (IC95 +0.029..+0.099). Por artículos: 1 → +0.037, 2 → +0.042, 3 → **+0.167 (IC95 +0.077..+0.256; 14 mejor, 2 peor)**. El patrón por artículos es exploratorio (no pre-registrado como pendiente) y en dev fue distinto (2 artículos +0.15, 3 artículos +0.05).
+
+**H2 (JEV navegando) — se rechaza.** ΔR@10 opción 5 − 2: 1 art. +0.012, 2 art. −0.021, 3 art. −0.024; pendiente −0.020, p = 0.90; el IC95 en 3 artículos incluye 0. Cadena completa@10: misma dirección (pendiente −0.033, p = 0.89). Navegar no supera a juzgar la lista de candidatos y cuesta 2.3×.
+
+**Criterio de escalar (sección 12) — no se cumple.** R@5 opción 5 − 3 = +0.078 (IC95 +0.044..+0.114), por debajo del umbral +0.15. Abstención: no medible en KoBLEX (no hay preguntas sin respuesta).
+
+**Lectura:** en KoBLEX el valor de JEV está en juzgar candidatos (barato: US$0.0012 por pregunta) y crece en las preguntas de 3 artículos; el grafo de citas con PPR no supera a la búsqueda vectorial, con o sin juez. Siguiente prueba: dominio sin citas explícitas y con preguntas sin respuesta (MuSiQue).
