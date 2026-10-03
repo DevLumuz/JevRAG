@@ -3,6 +3,7 @@ package datasets
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -66,6 +67,68 @@ func (r *MuSiQueRow) SupportRoles() map[string]string {
 		roles[ParagraphKey(p)] = role
 	}
 	return roles
+}
+
+// ResolvedStep is a decomposition step with its "#k" references replaced by
+// the answers of the steps they point to.
+type ResolvedStep struct {
+	Question     string // sub-question, references resolved
+	Answer       string
+	ParagraphKey string // key of the step's supporting paragraph ("" if unknown)
+	Deps         []int  // indexes of the steps this one references directly
+}
+
+// ResolvedSteps returns the decomposition with references resolved. Steps
+// without "#k" are entry points (first hops); the last step states the answer;
+// the others are middle hops.
+func (r *MuSiQueRow) ResolvedSteps() []ResolvedStep {
+	byIdx := map[int]MuSiQueParagraph{}
+	for _, p := range r.Paragraphs {
+		byIdx[p.Idx] = p
+	}
+	out := make([]ResolvedStep, len(r.Decomposition))
+	for i, s := range r.Decomposition {
+		q := s.Question
+		var deps []int
+		// Replace longest numbers first so "#1" never eats part of "#12".
+		for k := len(r.Decomposition); k >= 1; k-- {
+			ref := fmt.Sprintf("#%d", k)
+			if k-1 != i && strings.Contains(q, ref) {
+				q = strings.ReplaceAll(q, ref, r.Decomposition[k-1].Answer)
+				deps = append(deps, k-1)
+			}
+		}
+		sort.Ints(deps)
+		out[i] = ResolvedStep{Question: q, Answer: s.Answer, Deps: deps}
+		if s.ParagraphIdx != nil {
+			if p, ok := byIdx[*s.ParagraphIdx]; ok {
+				out[i].ParagraphKey = ParagraphKey(p)
+			}
+		}
+	}
+	return out
+}
+
+// Ancestors returns every step that step i depends on, directly or not, in
+// increasing order.
+func Ancestors(steps []ResolvedStep, i int) []int {
+	seen := map[int]bool{}
+	var walk func(int)
+	walk = func(j int) {
+		for _, d := range steps[j].Deps {
+			if !seen[d] {
+				seen[d] = true
+				walk(d)
+			}
+		}
+	}
+	walk(i)
+	out := make([]int, 0, len(seen))
+	for d := range seen {
+		out = append(out, d)
+	}
+	sort.Ints(out)
+	return out
 }
 
 // Hops returns the number of reasoning steps encoded in the ID prefix

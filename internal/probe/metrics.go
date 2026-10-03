@@ -114,3 +114,49 @@ func (m *Logistic) Score(x []float64) float64 {
 	}
 	return m.prob(z)
 }
+
+// ClusterMean returns the mean of values and its 95% bootstrap interval,
+// resampling whole clusters (e.g. all values of one question together) so
+// that correlated values are not counted as independent. Deterministic for a
+// given seed.
+func ClusterMean(values []float64, clusters []string, reps int, seed uint64) (mean, lo, hi float64) {
+	byCluster := map[string][]float64{}
+	var ids []string
+	for i, v := range values {
+		if math.IsNaN(v) {
+			continue
+		}
+		c := clusters[i]
+		if _, ok := byCluster[c]; !ok {
+			ids = append(ids, c)
+		}
+		byCluster[c] = append(byCluster[c], v)
+	}
+	if len(ids) == 0 {
+		return math.NaN(), math.NaN(), math.NaN()
+	}
+	meanOf := func(pick func(int) string) float64 {
+		s, n := 0.0, 0
+		for i := range ids {
+			for _, v := range byCluster[pick(i)] {
+				s += v
+				n++
+			}
+		}
+		return s / float64(n)
+	}
+	mean = meanOf(func(i int) string { return ids[i] })
+	rng := seed | 1
+	next := func() uint64 { // xorshift64
+		rng ^= rng << 13
+		rng ^= rng >> 7
+		rng ^= rng << 17
+		return rng
+	}
+	ms := make([]float64, reps)
+	for r := range ms {
+		ms[r] = meanOf(func(int) string { return ids[next()%uint64(len(ids))] })
+	}
+	sort.Float64s(ms)
+	return mean, ms[int(0.025*float64(reps))], ms[int(0.975*float64(reps))-1]
+}

@@ -58,3 +58,25 @@ func TestSupportRoles(t *testing.T) {
 		t.Errorf("roles = %v", roles)
 	}
 }
+
+func TestResolvedSteps(t *testing.T) {
+	one, two := 0, 1
+	r := &datasets.MuSiQueRow{
+		Paragraphs: []datasets.MuSiQueParagraph{{Idx: 0, Title: "A", Text: "a"}, {Idx: 1, Title: "B", Text: "b"}},
+		Decomposition: []datasets.MuSiQueStep{
+			{Question: "Who founded X?", Answer: "Ann", ParagraphIdx: &one},
+			{Question: "Where was #1 born?", Answer: "Oslo", ParagraphIdx: &two},
+			{Question: "When was #2 founded by #1 ?", Answer: "1048"},
+		},
+	}
+	s := r.ResolvedSteps()
+	if s[1].Question != "Where was Ann born?" || len(s[1].Deps) != 1 || s[1].ParagraphKey != "B | b" {
+		t.Errorf("step 2 = %+v", s[1])
+	}
+	if s[2].Question != "When was Oslo founded by Ann ?" || len(s[2].Deps) != 2 || s[2].ParagraphKey != "" {
+		t.Errorf("step 3 = %+v", s[2])
+	}
+	if got := datasets.Ancestors(s, 2); len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("ancestors = %v", got)
+	}
+}

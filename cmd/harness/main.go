@@ -76,6 +76,7 @@ type config struct {
 	gateTop       int
 	gateThreshold float64
 	probeBank     bool
+	notebookProbe bool
 	llmModel      string
 	maxLLM        int64
 }
@@ -91,6 +92,7 @@ func parseFlags() config {
 	flag.IntVar(&c.gateTop, "gate-top", 5, "passages shown to the sufficiency gate")
 	flag.Float64Var(&c.gateThreshold, "gate-threshold", 0.5, "abstain when the gate's probability is below this (tune on dev)")
 	flag.BoolVar(&c.probeBank, "build-probe-bank", false, "write labeled (query, passage) pairs from the dev split to data/probe and exit")
+	flag.BoolVar(&c.notebookProbe, "notebook-probe", false, "musique: plan v2 P1 — measure reach with notebook facts (T1) and write the T2/T3 probe inputs to data/probe, then exit (embeds a few hundred new query texts: needs --confirm-embed)")
 	flag.StringVar(&c.llmModel, "llm-model", "gemini-3.8-flash", "option 4: Gemini model used as judge")
 	flag.Int64Var(&c.maxLLM, "max-llm-tokens", 1_000_000, "option 4: stop after this many LLM input tokens (gemini-3.8-flash ≈ US$0.375 per million)")
 	flag.IntVar(&c.k, "k", 10, "keys returned per question (must be >= the largest reported K)")
@@ -229,6 +231,9 @@ func run(ctx context.Context, cfg config) error {
 	if cfg.probeBank {
 		_, err := buildProbeBank(bench, dev, qEmb, filepath.Join("data", "probe"))
 		return err
+	}
+	if cfg.notebookProbe {
+		return runNotebookProbe(ctx, cfg, bench, qEmb, querySpace)
 	}
 
 	edges := bench.Edges(nodes)

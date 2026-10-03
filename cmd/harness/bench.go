@@ -18,12 +18,13 @@ import (
 // benchQuestion is one evaluation question, independent of the dataset.
 type benchQuestion struct {
 	ID         string
-	Text       string            // what the judge reads
-	EmbedText  string            // what is embedded for retrieval
-	Gold       []string          // keys of the evidence that answers it (canonical form)
-	GoldRoles  map[string]string // optional role per gold key: "final" or "bridge"
-	Hops       int               // reasoning steps / evidence pieces needed
-	Answerable bool              // false: the memory does not contain the answer
+	Text       string                  // what the judge reads
+	EmbedText  string                  // what is embedded for retrieval
+	Gold       []string                // keys of the evidence that answers it (canonical form)
+	GoldRoles  map[string]string       // optional role per gold key: "final" or "bridge"
+	Hops       int                     // reasoning steps / evidence pieces needed
+	Answerable bool                    // false: the memory does not contain the answer
+	Steps      []datasets.ResolvedStep // optional reasoning decomposition (MuSiQue)
 }
 
 // benchmark is a memory (nodes + how they connect) plus questions about it.
@@ -177,6 +178,7 @@ func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchma
 				q.Gold = append(q.Gold, datasets.ParagraphKey(p))
 			}
 			q.GoldRoles = r.SupportRoles()
+			q.Steps = r.ResolvedSteps()
 		} else if t := twin[r.ID]; t == nil || allIn(t.Supporting(), corpus) {
 			leaked++
 			continue
