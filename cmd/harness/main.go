@@ -15,9 +15,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -48,6 +50,12 @@ type config struct {
 	minScore    float64
 	concurrency int
 	maxJEV      int64
+	seeds       int
+	neighbors   int
+	hops        int
+	maxCalls    int
+	damping     float64
+	seedTemp    float64
 	dims        int
 	cacheDir    string
 	envFile     string
@@ -74,6 +82,12 @@ func parseFlags() config {
 	flag.IntVar(&c.limit, "limit", 0, "run only the first N questions of the split (0 = all)")
 	flag.Float64Var(&c.minScore, "min-score", 0, "option 1: abstain if the best similarity is below this")
 	flag.IntVar(&c.concurrency, "concurrency", 8, "parallel judge calls per question")
+	flag.IntVar(&c.seeds, "seeds", 20, "options 3-5: entry points by similarity before graph traversal")
+	flag.IntVar(&c.neighbors, "neighbors", 5, "option 5: connections judged per accepted node")
+	flag.IntVar(&c.hops, "hops", 2, "option 5: how many steps the judge navigates from the seeds")
+	flag.IntVar(&c.maxCalls, "max-judge-calls", 60, "option 5: judge calls per question (seeds + connections)")
+	flag.Float64Var(&c.seedTemp, "seed-temp", 0.05, "options 3-5: seed weight sharpness exp((sim-best)/T); 0 = raw similarity (tuned on dev)")
+	flag.Float64Var(&c.damping, "damping", 0.3, "options 3-5: PPR probability of following a connection (HippoRAG: 0.5; 0.3 tuned on dev)")
 	flag.Int64Var(&c.maxJEV, "max-jev-tokens", 3_000_000, "stop the run after this many JEV input tokens (~$0.042 per million; 0 = no cap)")
 	flag.StringVar(&c.cacheDir, "cache", ".cache", "directory for downloaded dataset rows (regenerable, not tracked)")
 	flag.StringVar(&c.envFile, "env", ".env", "file with API keys (variables already set win)")
@@ -196,7 +210,8 @@ func run(ctx context.Context, cfg config) error {
 		qEmb[q.ID] = allQVecs[i]
 	}
 
-	r, jevJudge, err := buildRetriever(cfg, nodes)
+	setEdgeWeights(edges)
+	r, jevJudge, err := buildRetriever(cfg, nodes, edges)
 	if err != nil {
 		return err
 	}
@@ -215,6 +230,7 @@ func run(ctx context.Context, cfg config) error {
 			Abstained:  res.Abstained,
 			Latency:    time.Since(start),
 			JudgeCalls: res.Judged,
+			Hops:       q.NHops,
 		})
 		if (i+1)%20 == 0 {
 			log.Printf("  %d/%d", i+1, len(qs))
@@ -222,7 +238,7 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	report := evaluator.Summarize(outcomes, reportKs)
-	printReport(cfg, report, jevJudge)
+	printReport(cfg, report, jevJudge, outcomes)
 
 	runFile := filepath.Join(cfg.resultsDir, fmt.Sprintf("%s-option%d-%s.json", time.Now().Format("20060102-150405"), cfg.option, cfg.mode))
 	if err := writeJSON(runFile, outcomes); err != nil {
@@ -234,7 +250,7 @@ func run(ctx context.Context, cfg config) error {
 
 // buildRetriever returns the retriever for cfg.option and, when the option
 // uses JEV, the judge so its token usage can be reported.
-func buildRetriever(cfg config, nodes []*graphmodel.Node) (retrieval.Retriever, *judge.JEVJudge, error) {
+func buildRetriever(cfg config, nodes []*graphmodel.Node, edges []graphmodel.Edge) (retrieval.Retriever, *judge.JEVJudge, error) {
 	switch cfg.option {
 	case 1:
 		return &retrieval.PlainVector{Nodes: nodes, K: cfg.k, MinScore: cfg.minScore}, nil, nil
@@ -248,13 +264,38 @@ func buildRetriever(cfg config, nodes []*graphmodel.Node) (retrieval.Retriever, 
 		return &retrieval.JudgedVector{
 			Nodes: nodes, Judge: j, Candidates: cfg.candidates, K: cfg.k, Concurrency: cfg.concurrency,
 		}, j, nil
-	case 3, 4, 5:
-		return nil, nil, fmt.Errorf("option %d is not implemented yet (plan.md section 13, steps 4-5)", cfg.option)
+	case 3:
+		return &retrieval.GraphPPR{
+			Graph: retrieval.NewGraph(nodes, edges), Seeds: cfg.seeds, Damping: cfg.damping, SeedTemp: cfg.seedTemp, K: cfg.k,
+		}, nil, nil
+	case 5:
+		client, err := jev.NewHTTPClient(jev.Options{})
+		if err != nil {
+			return nil, nil, err
+		}
+		j := judge.NewJEVJudge(client)
+		j.MaxInputTokens = cfg.maxJEV
+		return &retrieval.GraphPPR{
+			Graph: retrieval.NewGraph(nodes, edges), Judge: j,
+			Seeds: cfg.seeds, Neighbors: cfg.neighbors, Hops: cfg.hops, MaxJudgeCalls: cfg.maxCalls,
+			Damping: cfg.damping, SeedTemp: cfg.seedTemp, K: cfg.k, Concurrency: cfg.concurrency,
+		}, j, nil
+	case 4:
+		return nil, nil, errors.New("option 4 (graph + Gemini judge) is not implemented yet")
 	}
 	return nil, nil, fmt.Errorf("--option must be 1..5, got %d", cfg.option)
 }
 
-func printReport(cfg config, r evaluator.Report, j *judge.JEVJudge) {
+// setEdgeWeights gives each citation edge its static strength: the cosine
+// similarity between the two articles' embeddings (plan section 4). It
+// depends only on the two texts, never on a question.
+func setEdgeWeights(edges []graphmodel.Edge) {
+	for i := range edges {
+		edges[i].Weight = math.Max(evaluator.CosineSimilarity(edges[i].F.Embedding, edges[i].T.Embedding), 0.01)
+	}
+}
+
+func printReport(cfg config, r evaluator.Report, j *judge.JEVJudge, outcomes []evaluator.QueryOutcome) {
 	fmt.Printf("\n== option %d · %s · %d questions ==\n", cfg.option, cfg.mode, r.Queries)
 	ks := make([]int, 0, len(r.RecallAt))
 	for k := range r.RecallAt {
@@ -262,7 +303,7 @@ func printReport(cfg config, r evaluator.Report, j *judge.JEVJudge) {
 	}
 	sort.Ints(ks)
 	for _, k := range ks {
-		fmt.Printf("Recall@%-3d %.3f\n", k, r.RecallAt[k])
+		fmt.Printf("Recall@%-3d %.3f   complete chain@%-3d %.3f\n", k, r.RecallAt[k], k, r.CompleteAt[k])
 	}
 	fmt.Printf("MRR        %.3f\n", r.MRR)
 	fmt.Printf("Abstention %.3f (%d abstained)\n", r.AbstentionAccuracy, r.Abstained)
@@ -273,5 +314,18 @@ func printReport(cfg config, r evaluator.Report, j *judge.JEVJudge) {
 		if r.Queries > 0 {
 			fmt.Printf("           %.0f input tokens / question\n", float64(in)/float64(r.Queries))
 		}
+	}
+
+	groups := evaluator.GroupByHops(outcomes)
+	hops := make([]int, 0, len(groups))
+	for h := range groups {
+		hops = append(hops, h)
+	}
+	sort.Ints(hops)
+	fmt.Printf("\nby articles needed   n    R@5    R@10   chain@10  judge calls/q\n")
+	for _, h := range hops {
+		g := evaluator.Summarize(groups[h], []int{5, 10})
+		fmt.Printf("  %d                 %3d   %.3f  %.3f  %.3f     %.1f\n",
+			h, g.Queries, g.RecallAt[5], g.RecallAt[10], g.CompleteAt[10], float64(g.JudgeCalls)/float64(g.Queries))
 	}
 }

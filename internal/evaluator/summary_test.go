@@ -44,3 +44,21 @@ func TestSummarize_Empty(t *testing.T) {
 }
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+func TestSummarize_CompleteAt(t *testing.T) {
+	outcomes := []evaluator.QueryOutcome{
+		{Expected: []string{"a", "b"}, Got: []string{"a", "x", "b"}}, // complete at 3+, not at 2
+		{Expected: []string{"c"}, Got: []string{"c"}},                // complete at 1
+	}
+	r := evaluator.Summarize(outcomes, []int{1, 3})
+	if !approx(r.CompleteAt[1], 0.5) || !approx(r.CompleteAt[3], 1.0) {
+		t.Errorf("CompleteAt = %v, want {1:0.5, 3:1}", r.CompleteAt)
+	}
+}
+
+func TestGroupByHops(t *testing.T) {
+	g := evaluator.GroupByHops([]evaluator.QueryOutcome{{Hops: 2}, {Hops: 1}, {Hops: 2}})
+	if len(g[1]) != 1 || len(g[2]) != 2 {
+		t.Errorf("GroupByHops = %v", g)
+	}
+}
