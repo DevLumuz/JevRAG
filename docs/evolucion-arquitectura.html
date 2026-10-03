@@ -304,7 +304,8 @@ table.mini tr.hl td { font-weight: 700; color: var(--accent); }
     <li>Queremos una memoria para agentes que traiga la evidencia correcta aunque esté repartida en varios documentos, y que diga “no hay evidencia” cuando falte.</li>
     <li>Usar a <span class="jev">JEV</span> para juzgar cada documento por separado <strong>borraba los eslabones intermedios</strong> de la cadena.</li>
     <li>La arquitectura nueva busca por rondas: JEV <strong>escoge la frase clave</strong>, se anota en un <strong>cuaderno</strong>, y la siguiente búsqueda usa ese cuaderno. En el grupo de ajuste, las cadenas completas pasan de <strong>59% a 79%</strong>.</li>
-    <li>En la prueba final, con 150 preguntas nuevas, el bucle supera a la mejor alternativa con el mismo gasto: cadenas completas de <strong>75% a 83%</strong>.</li>
+    <li>En la prueba final, con 150 preguntas nuevas, el bucle supera a la mejor alternativa con el mismo gasto: cadenas completas de <strong>75% a 83%</strong>. Un reordenador estándar no puede hacer ese trabajo (63%).</li>
+    <li>Para decir “no hay evidencia” acierta 8 de cada 10 casos; la meta (0.85) quedó a una milésima.</li>
   </ol>
 </section>
 
@@ -420,6 +421,8 @@ respuesta: <b>sí · 0.87</b>  (ejemplo ilustrativo)</pre>
 <tr><td class="n">3</td><td>Grafo + JEV navega</td><td>Seguir conexiones entre documentos, JEV califica cada paso</td><td><span class="chip no">no supera al vector</span></td></tr>
 <tr><td class="n">4</td><td>Auditoría</td><td>Revisar el banco de pruebas antes de seguir</td><td><span class="chip mid">se encontró el fallo real</span></td></tr>
 <tr><td class="n">5</td><td>Explorador con cuaderno</td><td>Buscar, anotar la frase clave, volver a buscar con ella</td><td><span class="chip ok">ajuste: 59% → 79%</span> <span class="chip ok">final: 75% → 83%</span></td></tr>
+<tr><td class="n">6</td><td>JEV vs reordenador</td><td>Cambiar a JEV por un reordenador estándar</td><td><span class="chip no">reordenador 63%</span> <span class="chip ok">JEV se queda</span></td></tr>
+<tr><td class="n">7</td><td>Abstención</td><td>JEV revisa el cuaderno: ¿hay evidencia suficiente?</td><td><span class="chip mid">0.849 · meta 0.85</span></td></tr>
 </tbody></table></div>
 </section>
 
@@ -948,8 +951,113 @@ respuesta: <b>sí · 0.87</b>  (ejemplo ilustrativo)</pre>
   <p>La ganancia es menor que en el grupo de ajuste (+23.5), lo normal al pasar a preguntas nuevas; además aquí 3 de cada 4 preguntas son de solo 2 saltos, donde todos van bien. Costo: US$0.0018 de JEV por pregunta.</p>
 </section>
 
-<section class="part" aria-labelledby="pd">
+<section class="block" aria-labelledby="c5">
+  <h3 class="bh" id="c5">¿JEV o un reordenador estándar? (Fase 1)</h3>
+  <p>Un reordenador (cross-encoder) es la herramienta estándar para reordenar resultados. Probamos <strong>bge-reranker-v2-m3</strong>, uno de los más usados, en el mismo lugar que JEV.</p>
+  <div class="charts">
+    <div class="chart-card"><h3>Cadena completa · 150 preguntas nuevas</h3><div class="sub">Cada sistema reordena los mismos 30 candidatos, salvo el bucle</div><svg class="chart" viewBox="0 0 400 218" role="img" aria-label="Cadena completa: vector 73%, reordenador 63%, JEV 77%, bucle 83%">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="196"/>
+<text class="tick" x="0.0" y="210" text-anchor="start">0%</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="196"/>
+<text class="tick" x="80.0" y="210" text-anchor="middle">25%</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="196"/>
+<text class="tick" x="160.0" y="210" text-anchor="middle">50%</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="196"/>
+<text class="tick" x="240.0" y="210" text-anchor="middle">75%</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="196"/>
+<text class="tick" x="320.0" y="210" text-anchor="middle">100%</text>
+<text class="blabel" x="0" y="20">Vector con la pregunta (hoy)</text>
+<rect class="bar b-base" x="0" y="27" width="232.6" height="16" rx="2"/>
+<text class="bval" x="238.6" y="40">73%</text>
+<text class="blabel" x="0" y="66">Reordenador estándar</text>
+<rect class="bar b-bad" x="0" y="73" width="200.6" height="16" rx="2"/>
+<text class="bval" x="206.6" y="86">63%</text>
+<text class="blabel" x="0" y="112">JEV califica</text>
+<rect class="bar b-jev" x="0" y="119" width="245.4" height="16" rx="2"/>
+<text class="bval" x="251.4" y="132">77%</text>
+<text class="blabel" x="0" y="158">Bucle con cuaderno + JEV</text>
+<rect class="bar b-good" x="0" y="165" width="264.6" height="16" rx="2"/>
+<text class="bval" x="270.6" y="178">83%</text>
+</svg></div>
+    <div class="chart-card"><h3>Reconocer el eslabón intermedio</h3><div class="sub">AUC dentro de cada pregunta, 63 pasos intermedios, con frases escogidas por JEV</div><svg class="chart" viewBox="0 0 400 126" role="img" aria-label="AUC intermedios: reordenador 0.714, JEV 0.871">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="104"/>
+<text class="tick" x="0.0" y="118" text-anchor="start">0.5 azar</text>
+<line class="grid" x1="64.0" y1="6" x2="64.0" y2="104"/>
+<text class="tick" x="64.0" y="118" text-anchor="middle">0.6</text>
+<line class="grid" x1="128.0" y1="6" x2="128.0" y2="104"/>
+<text class="tick" x="128.0" y="118" text-anchor="middle">0.7</text>
+<line class="grid" x1="192.0" y1="6" x2="192.0" y2="104"/>
+<text class="tick" x="192.0" y="118" text-anchor="middle">0.8</text>
+<line class="grid" x1="256.0" y1="6" x2="256.0" y2="104"/>
+<text class="tick" x="256.0" y="118" text-anchor="middle">0.9</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="104"/>
+<text class="tick" x="320.0" y="118" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Reordenador estándar</text>
+<rect class="bar b-bad" x="0" y="27" width="137.0" height="16" rx="2"/>
+<text class="bval" x="143.0" y="40">0.714</text>
+<text class="blabel" x="0" y="66">JEV</text>
+<rect class="bar b-jev" x="0" y="73" width="237.4" height="16" rx="2"/>
+<text class="bval" x="243.4" y="86">0.871</text>
+</svg></div>
+  </div>
+  <p>El reordenador <strong>empeora</strong> la búsqueda: le da 0.02 al párrafo intermedio del ejemplo de Coolidge, el mismo error que tenía JEV aislado. Dentro del bucle, cambiar a JEV por el reordenador baja la cadena completa de 79% a 32% (grupo de ajuste). JEV le gana por +0.23 de AUC en pasos intermedios y +0.11 en finales.</p>
+  <p class="lesson"><b>Lección:</b> el valor no viene de “reordenar mejor” en general, sino de poder preguntarle a JEV exactamente lo que el bucle necesita (“¿falta este dato?”), cosa que un reordenador no admite.</p>
+</section>
+
+<section class="block" aria-labelledby="c6">
+  <h3 class="bh" id="c6">¿Sabe decir “no hay evidencia”? (Fase 3)</h3>
+  <p>300 preguntas nuevas, la mitad sin respuesta en la memoria (le falta un documento de la cadena). Al final del bucle JEV revisa el cuaderno: “¿los hechos, encadenados, dan la respuesta final?” y “¿queda algo de la pregunta sin identificar?”.</p>
+  <svg class="chart" viewBox="0 0 400 218" role="img" aria-label="AUROC abstención: filtro 0.830, cuaderno 0.818, combinada 0.849, cuaderno más párrafos 0.861">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="196"/>
+<text class="tick" x="0.0" y="210" text-anchor="start">0.5 azar</text>
+<line class="grid" x1="64.0" y1="6" x2="64.0" y2="196"/>
+<text class="tick" x="64.0" y="210" text-anchor="middle">0.6</text>
+<line class="grid" x1="128.0" y1="6" x2="128.0" y2="196"/>
+<text class="tick" x="128.0" y="210" text-anchor="middle">0.7</text>
+<line class="grid" x1="192.0" y1="6" x2="192.0" y2="196"/>
+<text class="tick" x="192.0" y="210" text-anchor="middle">0.8</text>
+<line class="grid" x1="256.0" y1="6" x2="256.0" y2="196"/>
+<text class="tick" x="256.0" y="210" text-anchor="middle">0.9</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="196"/>
+<text class="tick" x="320.0" y="210" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Filtro anterior (5 primeros párrafos)</text>
+<rect class="bar b-base" x="0" y="27" width="211.2" height="16" rx="2"/>
+<text class="bval" x="217.2" y="40">0.830</text>
+<text class="blabel" x="0" y="66">Cuaderno solo</text>
+<rect class="bar b-base" x="0" y="73" width="203.5" height="16" rx="2"/>
+<text class="bval" x="209.5" y="86">0.818</text>
+<text class="blabel" x="0" y="112">Filtro anterior + cuaderno (pre-registrada)</text>
+<rect class="bar b-jev" x="0" y="119" width="223.4" height="16" rx="2"/>
+<text class="bval" x="229.4" y="132">0.849</text>
+<text class="blabel" x="0" y="158">Cuaderno + 5 mejores párrafos del bucle*</text>
+<rect class="bar b-good" x="0" y="165" width="231.0" height="16" rx="2"/>
+<text class="bval" x="237.0" y="178">0.861</text>
+</svg>
+  <p class="sub">AUROC: probabilidad de que una pregunta con respuesta puntúe más alto que una sin respuesta. Meta 0.85. *Combinación probada después, no pre-registrada.</p>
+  <p>La señal pre-registrada quedó en <strong>0.849</strong> y 78% de aciertos balanceados: <strong>no llega a la meta por muy poco</strong> (0.85 y 80%). Cuando el bucle sí trajo la cadena completa, el cuaderno separa bien; los fallos se concentran en cadenas que quedaron incompletas.</p>
+  <p class="lesson"><b>Lección:</b> abstenerse ya funciona razonablemente (8 de cada 10 casos bien clasificados), pero es la pieza más débil. El siguiente paso es que el cuaderno registre qué requisito cubre cada frase, para ver exactamente qué falta.</p>
+</section>
+
+<section class="part" aria-labelledby="pcomp">
   <div class="eyebrow">Parte 4</div>
+  <h2 class="part-title" id="pcomp">Comparación con otros enfoques publicados</h2>
+  <p class="intro">Los escenarios no son idénticos (otra muestra de MuSiQue, una memoria más chica, otro modelo de embeddings), así que se comparan las <strong>ganancias</strong> sobre una búsqueda fuerte, no las cifras absolutas.</p>
+</section>
+<section class="block">
+  <div class="tablewrap"><table class="glance">
+  <thead><tr><th>Enfoque</th><th>Qué hace</th><th>Ganancia en MuSiQue</th><th>Qué cuesta</th></tr></thead>
+  <tbody>
+  <tr><td>IRCoT (2023)</td><td>Un LLM razona y vuelve a buscar en cada paso</td><td>+3.5 a +12.5 de recall</td><td>una generación de LLM por paso</td></tr>
+  <tr><td>HippoRAG (2024)</td><td>Grafo de conocimiento extraído con LLM + PageRank</td><td>+2.7 R@5 (49.2 → 51.9)</td><td>LLM para indexar toda la memoria</td></tr>
+  <tr><td>HippoRAG 2 (2025)</td><td>Grafo + embeddings de 7B + filtro con LLM</td><td>+5.0 R@5 (69.7 → 74.7)</td><td>LLM de 70B para indexar + LLM por consulta</td></tr>
+  <tr><td>Reordenador estándar (medido aquí)</td><td>bge-reranker-v2-m3 sobre 30 candidatos</td><td><span class="chip no">−8.7 R@5 · −10 cadena</span></td><td>modelo de 568M, CPU</td></tr>
+  <tr><td><strong>Bucle con cuaderno + JEV</strong></td><td>Rondas de búsqueda; JEV escoge frases y califica con el cuaderno</td><td><span class="chip ok">+3.7 R@5 · +10 cadena</span></td><td>US$0.0018 de JEV, sin generar texto ni indexar con LLM</td></tr>
+  </tbody></table></div>
+  <p>La mejora del bucle está en el mismo rango que la de métodos que usan modelos generativos grandes, y cuesta una fracción. Para compararlo de igual a igual falta correrlo en el conjunto exacto de HippoRAG 2 (1,000 preguntas, 11,656 párrafos) y en 2Wiki y HotpotQA.</p>
+</section>
+
+<section class="part" aria-labelledby="pd">
+  <div class="eyebrow">Parte 5</div>
   <h2 class="part-title" id="pd">Dónde estamos y qué sigue</h2>
 </section>
 
@@ -959,19 +1067,21 @@ respuesta: <b>sí · 0.87</b>  (ejemplo ilustrativo)</pre>
       <li>JEV aislado ayuda en leyes y daña en documentos sin citas.</li>
       <li>Con cuaderno, la búsqueda alcanza los eslabones intermedios y JEV los reconoce.</li>
       <li>El bucle completo supera a todas las alternativas, también en preguntas nuevas, y sin JEV el bucle no funciona.</li>
+      <li>Un reordenador estándar no reemplaza a JEV: empeora la búsqueda.</li>
+      <li>La abstención funciona en 8 de cada 10 casos, cerca de la meta.</li>
     </ul></div>
     <div class="card"><h4>Lo que falta demostrar</h4><ul class="plain">
-            <li>Que JEV le gana a un reordenador estándar como bge-reranker.</li>
-      <li>Que sabe abstenerse: decir “no hay evidencia” revisando requisito por requisito sobre el cuaderno.</li>
+                  <li>Abstención más fina: que el cuaderno registre qué requisito cubre cada frase.</li>
+      <li>Comparación de igual a igual con HippoRAG 2 en su mismo conjunto de datos.</li>
       <li>Que funciona en documentos de empresa y en español.</li>
     </ul></div>
   </div>
   <div class="next">
+    <div class="next-card"><div class="eyebrow">Siguiente</div><h3>Igual a igual con HippoRAG 2</h3><p>Su conjunto exacto de MuSiQue, 2Wiki y HotpotQA.</p><p class="gate">Mide si la ventaja de costo se sostiene con la misma calidad.</p></div>
+    <div class="next-card"><div class="eyebrow">Siguiente</div><h3>Abstención por requisito</h3><p>Cada frase del cuaderno marca qué parte de la pregunta cubre.</p><p class="gate">Meta: AUROC ≥ 0.85, aciertos ≥ 80%.</p></div>
     <div class="next-card"><div class="eyebrow">Fase 4</div><h3>Prueba de producto</h3><p>Documentos tipo empresa y leyes, en español, con intentos de manipulación.</p><p class="gate">Sí o no al producto.</p></div>
-    <div class="next-card"><div class="eyebrow">Fase 1</div><h3>Contra un reordenador</h3><p>bge-reranker-v2-m3, solo y combinado con JEV.</p><p class="gate">Si el reordenador iguala a JEV, JEV deja de ordenar.</p></div>
-    <div class="next-card"><div class="eyebrow">Fase 3</div><h3>Abstención</h3><p>Decidir “no hay evidencia” con el cuaderno.</p><p class="gate">Meta: AUROC ≥ 0.85.</p></div>
   </div>
 </section>
 
-<footer>Fuentes: <span class="num">plan.md</span> (secciones 17–25) y <span class="num">results/</span> del repositorio. La prueba final de la Fase 2 usó 150 preguntas nuevas, nunca usadas para ajustar.</footer>
+<footer>Fuentes: <span class="num">plan.md</span> (secciones 17–28) y <span class="num">results/</span> del repositorio. La prueba final de la Fase 2 usó 150 preguntas nuevas, nunca usadas para ajustar.</footer>
 </main>

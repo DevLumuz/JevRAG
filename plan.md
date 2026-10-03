@@ -691,3 +691,20 @@ Diagnóstico: en las preguntas con respuesta cuya cadena el bucle sí trajo comp
 **Fase 1 en dev** (`results/20261003-065445-musique-explore-phase1-dev.md`, bge-reranker-v2-m3 int8 en CPU; Spearman 0.991 contra fp32): cadena@10 — vector 0.588; una pasada + JEV 30 0.559; **una pasada + reordenador 30 0.441**; reordenador 60 0.265; media JEV+reordenador 30 0.588; bucle con reordenador (sin JEV) 0.324; bucle reordenador califica + JEV escoge frases 0.294; bucle media + JEV frases 0.559; **bucle + JEV 0.794**. El reordenador, como JEV aislado en §21, hunde los puentes (le da 0.02 al pasaje intermedio del ejemplo Coolidge) y además rinde por debajo del embedding de Gemini como ordenador.
 
 **Pre-registro H8 (memoria A de §25, 150 con respuesta, una corrida `--variants phase1final --musique-split train --mode all`):** (a) cadena@10 bucle + JEV − una pasada + reordenador 30 > 0 con IC95 que excluye 0; (b) puerta de la Fase 1: si una pasada + reordenador 30 iguala o supera a una pasada + JEV 30 (±0.01), JEV deja de ordenar en una pasada.
+
+---
+
+## 28. Resultado H8 (Fase 1) y síntesis contra otros enfoques (3 de octubre de 2026)
+
+**H8 — se cumple.** Memoria A (150 con respuesta), `results/20261003-084457-musique-train-explore-phase1final-all.md`. Cadena@10: vector 0.727; una pasada + reordenador 30 **0.627**; una pasada + JEV 30 0.767; media JEV+reordenador 30 0.780; **bucle + JEV 0.827**. (a) bucle + JEV − reordenador 30 = **+0.200 (IC95 +0.127..+0.280)**. (b) El reordenador no iguala a JEV en una pasada (0.627 vs 0.767): JEV sigue ordenando. En el banco P1 (AUC dentro de cada objetivo) JEV supera al reordenador por +0.23 en pasos intermedios y +0.11 en finales, en todas las condiciones. El reordenador estándar daña los puentes (3 saltos: 0.15 contra 0.35 del vector).
+
+**Síntesis contra trabajos publicados (escenarios distintos, comparar ganancias relativas, no cifras absolutas):**
+
+| trabajo | escenario | base fuerte → método | ganancia | costo por consulta |
+|---|---|---|---|---|
+| HippoRAG 2 (2025) | MuSiQue, 1,000 preguntas, 11,656 pasajes, R@5 | NV-Embed-v2 69.7 → 74.7 | +5.0 R@5 | LLM 70B para indexar todo (OpenIE) + filtro LLM por consulta |
+| HippoRAG (2024) | MuSiQue, R@5 | ColBERTv2 49.2 → 51.9 | +2.7 R@5 | LLM para indexar |
+| IRCoT (2023) | MuSiQue, recall | una búsqueda → iterativo con LLM | +3.5 (Flan-T5) a +12.5 (GPT-3) | una generación LLM por paso |
+| **Este trabajo** | MuSiQue train, 150 preguntas, 3,402 pasajes | Gemini embedding 81.7 → 85.4 R@5; cadena@10 72.7 → 82.7 | **+3.7 R@5, +10.0 cadena@10** | JEV US$0.0018, sin generación ni indexado con LLM |
+
+Lectura: la ganancia del bucle con cuaderno está en el mismo orden que la de los métodos de referencia con LLM, con un costo por consulta mucho menor y sin generar texto. No es comparable en cifras absolutas (memoria 3.4× más chica, otra muestra, otro embedding base). Siguiente paso para comparar de igual a igual: correr el bucle en el conjunto exacto de HippoRAG 2 (1,000 preguntas MuSiQue, 11,656 pasajes) y en 2Wiki/HotpotQA.
