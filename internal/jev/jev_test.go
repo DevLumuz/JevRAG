@@ -45,7 +45,7 @@ func TestHTTPClient_SystemOne(t *testing.T) {
 	}
 
 	resp, err := c.SystemOne(context.Background(), map[string]string{"query": "q"}, map[string]jev.Question{
-		"relevance":  jev.Choice("How relevant?", map[string]string{"irrelevant": "", "weak": "", "high": "", "direct": ""}),
+		"relevance":  jev.Choice("How relevant?", []jev.Option{{Label: "irrelevant"}, {Label: "weak"}, {Label: "high"}, {Label: "direct"}}),
 		"sufficient": jev.Noul("Is the evidence sufficient?"),
 		"urgency":    jev.Score("How urgent?", []string{"low", "mid", "high"}),
 	})

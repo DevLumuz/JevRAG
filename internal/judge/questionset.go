@@ -38,6 +38,28 @@ func LoadQuestionSet(path string) (*QuestionSet, error) {
 	if err := json.Unmarshal(data, &qs); err != nil {
 		return nil, fmt.Errorf("judge: parsing %s: %w", path, err)
 	}
+	// Re-read instructions and criteria preserving key order: plain maps
+	// would reach JEV with options sorted alphabetically.
+	var raw struct {
+		Questions map[string]json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("judge: parsing %s: %w", path, err)
+	}
+	for id, rq := range raw.Questions {
+		v, err := jev.DecodeOrdered(rq)
+		if err != nil {
+			return nil, fmt.Errorf("judge: %s: question %q: %w", path, id, err)
+		}
+		obj, ok := v.(jev.Ordered)
+		if !ok {
+			return nil, fmt.Errorf("judge: %s: question %q is not an object", path, id)
+		}
+		q := qs.Questions[id]
+		q.Instructions, _ = obj.Get("instructions")
+		q.Criteria, _ = obj.Get("criteria")
+		qs.Questions[id] = q
+	}
 	if qs.Name == "" || len(qs.Questions) == 0 {
 		return nil, fmt.Errorf("judge: %s needs a name and at least one question", path)
 	}

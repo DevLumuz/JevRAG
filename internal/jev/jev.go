@@ -27,16 +27,23 @@ type Question struct {
 	Criteria     any    `json:"criteria,omitempty"`
 }
 
-// Choice builds a question that picks one label. Each label maps to a
-// description of when it applies; an empty description sends the label alone.
-func Choice(instructions string, criteria map[string]string) Question {
-	c := make(map[string]any, len(criteria))
-	for label, desc := range criteria {
-		if desc == "" {
-			c[label] = nil
-		} else {
-			c[label] = desc
+// Option is one label of a Choice with a description of when it applies; an
+// empty description sends the label alone.
+type Option struct {
+	Label       string
+	Description string
+}
+
+// Choice builds a question that picks one label. Options are sent in the
+// order given (JEV is sensitive to option order).
+func Choice(instructions string, options []Option) Question {
+	c := make(Ordered, 0, len(options))
+	for _, o := range options {
+		var d any
+		if o.Description != "" {
+			d = o.Description
 		}
+		c = append(c, KV{Key: o.Label, Value: d})
 	}
 	return Question{Type: "choice", Instructions: instructions, Criteria: c}
 }

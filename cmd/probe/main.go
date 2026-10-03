@@ -38,7 +38,7 @@ func main() {
 	banks := flag.String("banks", "data/probe/bank-dev-koblex.json,data/probe/bank-dev-musique.json", "comma-separated bank files")
 	cachePath := flag.String("cache", "data/probe/cache.jsonl", "response cache")
 	outDir := flag.String("out", "results/probe", "where reports are written")
-	model := flag.String("model", "jev-latest", "JEV model")
+	model := flag.String("model", "jev-1.13.0", "JEV model, pinned to a version so cached answers never mix model versions")
 	conc := flag.Int("concurrency", 8, "parallel requests")
 	maxTok := flag.Int64("max-jev-tokens", 2_000_000, "cap on paid input tokens per set (~US$0.042 per million)")
 	flag.Parse()

@@ -100,8 +100,8 @@ func llmPrompt(s EdgeState) string {
 	b.WriteString("STATE (JSON):\n")
 	b.Write(st)
 	b.WriteString("\n\n1. relevance — " + relevanceInstructions + "\n")
-	for _, t := range []RelevanceTier{Irrelevant, Weak, High, Direct} {
-		fmt.Fprintf(&b, "   - %s: %s\n", t, relevanceCriteria[t.String()])
+	for _, o := range relevanceOptions {
+		fmt.Fprintf(&b, "   - %s: %s\n", o.Label, o.Description)
 	}
 	b.WriteString("2. sufficient — true if: " + sufficientInstructions + "\n")
 	b.WriteString("3. contradicts — true if: " + contradictsInstructions + " (false when `confirmed` is empty)\n")

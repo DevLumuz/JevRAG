@@ -127,8 +127,9 @@ func TestJEVJudge_AsksContradictionOnlyWithConfirmed(t *testing.T) {
 	if _, ok := client.Calls[1].Questions["contradicts"]; !ok {
 		t.Error("second call should ask contradicts")
 	}
-	if _, ok := client.Calls[0].Questions["relevance"].Criteria.(map[string]any)["direct"]; !ok {
-		t.Error("relevance criteria must include every tier")
+	crit := client.Calls[0].Questions["relevance"].Criteria.(jev.Ordered)
+	if len(crit) != 4 || crit[0].Key != "irrelevant" || crit[3].Key != "direct" {
+		t.Errorf("relevance options must be every tier, lowest first: %v", crit)
 	}
 }
 

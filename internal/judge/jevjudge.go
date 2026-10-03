@@ -21,11 +21,12 @@ const relevanceInstructions = "How relevant is the connection from `from` to `ca
 	"for answering `query`, given the evidence already in `confirmed`? " +
 	"Judge the candidate's content, not how many links it has."
 
-var relevanceCriteria = map[string]string{
-	Irrelevant.String(): "The candidate adds nothing to answering the query, or contradicts the confirmed evidence.",
-	Weak.String():       "The candidate is related to the topic but only tangential to this query.",
-	High.String():       "The candidate is a necessary step in the reasoning chain toward the answer.",
-	Direct.String():     "The candidate itself states or contains the answer to the query.",
+// relevanceOptions are listed from lowest to highest tier, in that order.
+var relevanceOptions = []jev.Option{
+	{Label: Irrelevant.String(), Description: "The candidate adds nothing to answering the query, or contradicts the confirmed evidence."},
+	{Label: Weak.String(), Description: "The candidate is related to the topic but only tangential to this query."},
+	{Label: High.String(), Description: "The candidate is a necessary step in the reasoning chain toward the answer."},
+	{Label: Direct.String(), Description: "The candidate itself states or contains the answer to the query."},
 }
 
 const sufficientInstructions = "The `candidate` together with the `confirmed` evidence is enough " +
@@ -92,7 +93,7 @@ func (j *JEVJudge) ScoreEdge(ctx context.Context, edge graphmodel.Edge, query st
 	}
 
 	questions := map[string]jev.Question{
-		qRelevance:  jev.Choice(relevanceInstructions, relevanceCriteria),
+		qRelevance:  jev.Choice(relevanceInstructions, relevanceOptions),
 		qSufficient: jev.Noul(sufficientInstructions),
 	}
 	if len(confirmed) > 0 {

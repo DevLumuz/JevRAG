@@ -53,7 +53,7 @@ func TestFitLogistic(t *testing.T) {
 func TestRun_CachesResponses(t *testing.T) {
 	set := &judge.QuestionSet{Name: "s", Questions: map[string]jev.Question{
 		"answers": jev.Noul("The `passage` answers `query`."),
-		"role":    jev.Choice("Role?", map[string]string{"final": "", "other": ""}),
+		"role":    jev.Choice("Role?", []jev.Option{{Label: "final"}, {Label: "other"}}),
 	}}
 	client := &jev.FakeClient{Respond: func(state any, _ map[string]jev.Question) (*jev.Response, error) {
 		st := state.(probe.State)
