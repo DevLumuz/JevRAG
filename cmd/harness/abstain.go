@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"jev/internal/graphmodel"
 	"jev/internal/judge"
 	"jev/internal/notebook"
 	"jev/internal/probe"
@@ -27,6 +28,8 @@ type abstainRow struct {
 	NoMissing  float64 `json:"no_missing"`    // notebook: 1 − P(missing link)
 	Coverage   float64 `json:"coverage"`      // mean of the two notebook signals
 	MaxAnswer  float64 `json:"max_answer"`    // loop: highest P(answers_query) of any passage
+	LoopGate   float64 `json:"loop_gate"`     // earlier gate question on the loop's top 5 passages
+	CovPass    float64 `json:"cov_passages"`  // coverage questions on notebook + loop's top 5 passages
 	Facts      int     `json:"facts"`
 }
 
@@ -38,8 +41,12 @@ var abstainSignals = []struct {
 	{"earlier gate (JEV on top-5 vector passages)", func(r abstainRow) float64 { return r.OldGate }, false},
 	{"notebook: answer_stated", func(r abstainRow) float64 { return r.Stated }, false},
 	{"notebook: 1 − missing_link", func(r abstainRow) float64 { return r.NoMissing }, false},
-	{"notebook: coverage (mean of both) — primary", func(r abstainRow) float64 { return r.Coverage }, true},
+	{"notebook: coverage (mean of both)", func(r abstainRow) float64 { return r.Coverage }, false},
+	{"mean(earlier gate, notebook coverage) — primary (frozen in plan §26)", func(r abstainRow) float64 { return (r.OldGate + r.Coverage) / 2 }, true},
 	{"loop: max answers_query over passages", func(r abstainRow) float64 { return r.MaxAnswer }, false},
+	{"earlier gate question on the loop's top 5", func(r abstainRow) float64 { return r.LoopGate }, false},
+	{"coverage on notebook + loop's top 5 passages", func(r abstainRow) float64 { return r.CovPass }, false},
+	{"mean(earlier gate on loop top 5, coverage + passages)", func(r abstainRow) float64 { return (r.LoopGate + r.CovPass) / 2 }, false},
 }
 
 // runAbstain is Phase 3: after the notebook loop, decide "not enough
@@ -61,9 +68,22 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		for _, s := range top {
 			ev.Evidence = append(ev.Evidence, judge.EvidenceItem{ID: s.Node.Key, Text: s.Node.Content})
 		}
+		byKey := map[string]*graphmodel.Node{}
+		for _, n := range bench.Nodes {
+			byKey[n.Key] = n
+		}
+		lev := judge.EvidenceState{Query: q.Text}
+		var passages []notebook.Passage
+		for _, k := range tr.Ranked[:min(5, len(tr.Ranked))] {
+			n := byKey[k]
+			lev.Evidence = append(lev.Evidence, judge.EvidenceItem{ID: n.Key, Text: n.Content})
+			passages = append(passages, notebook.Passage{Title: bench.Source(n), Text: n.Content})
+		}
 		items := []probe.Item{
 			{State: ev, Questions: judge.SufficiencyQuestions()},
 			{State: notebook.CoverageState{Query: q.Text, KnownFacts: notebook.View(tr.Notebook)}, Questions: notebook.CoverageQuestions},
+			{State: lev, Questions: judge.SufficiencyQuestions()},
+			{State: notebook.CoverageWithPassages{Query: q.Text, KnownFacts: notebook.View(tr.Notebook), Passages: passages}, Questions: notebook.CoverageQuestions},
 		}
 		resps, u, err := probe.RunItems(ctx, ex.JEV, ex.Model, items, ex.Cache, 2, 0)
 		if err != nil {
@@ -74,6 +94,8 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			Stated: resps[1].Answers["answer_stated"].Noul, NoMissing: 1 - resps[1].Answers["missing_link"].Noul,
 			MaxAnswer: tr.MaxAnswer, Facts: len(tr.Notebook)}
 		r.Coverage = (r.Stated + r.NoMissing) / 2
+		r.LoopGate = judge.SufficiencyAnswer(resps[2])
+		r.CovPass = (resps[3].Answers["answer_stated"].Noul + 1 - resps[3].Answers["missing_link"].Noul) / 2
 		rows = append(rows, r)
 		if (i+1)%20 == 0 {
 			log.Printf("  %d/%d · paid JEV tokens so far %d (~US$%.3f)", i+1, len(qs), paid, float64(paid)/1e6*jevPricePerMTok)
@@ -102,7 +124,7 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		}
 		fmt.Fprintf(&b, "| %s | %.3f [%.3f–%.3f] | %.3f (%.2f) | %s |\n", sg.name, auc, lo, hi, bestAcc, bestT, frozen)
 	}
-	fmt.Fprintf(&b, "\nFrozen threshold (--abstain-threshold) = %.2f, applied to the primary signal (notebook coverage); it is chosen on dev only.\n", cfg.abstainThreshold)
+	fmt.Fprintf(&b, "\nFrozen threshold (--abstain-threshold) = %.2f, applied to the primary signal; it is chosen on dev only.\n", cfg.abstainThreshold)
 	fmt.Print(b.String())
 
 	stamp := time.Now().Format("20060102-150405")

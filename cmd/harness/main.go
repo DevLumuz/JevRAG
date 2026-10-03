@@ -103,7 +103,7 @@ func parseFlags() config {
 	flag.StringVar(&c.dataset, "dataset", "koblex", "benchmark: koblex (statutes, explicit citations) or musique (Wikipedia paragraphs, inferred links, unanswerable questions)")
 	flag.StringVar(&c.musiqueSplit, "musique-split", "validation", "musique: split the memory is built from; train = fresh questions never used for tuning")
 	flag.BoolVar(&c.abstain, "abstain", false, "plan v2 Phase 3: run the notebook loop on every question of --mode and decide abstention from the notebook, then exit")
-	flag.Float64Var(&c.abstainThreshold, "abstain-threshold", 0.5, "--abstain: answer when notebook coverage ≥ this (choose on dev, freeze for test)")
+	flag.Float64Var(&c.abstainThreshold, "abstain-threshold", 0.5, "--abstain: answer when the primary signal ≥ this (chosen on dev: 0.31, plan §26)")
 	flag.StringVar(&c.musiqueSalt, "musique-salt", "", "musique: salt of the question sampling hash; a new salt draws a different memory (empty = the original draw)")
 	flag.IntVar(&c.musiquePages, "musique-pages", 20, "musique, non-validation splits: pages of 100 rows sampled evenly")
 	flag.IntVar(&c.musiqueN, "musique-n", 150, "musique: answerable and unanswerable questions sampled (each) to build the memory")

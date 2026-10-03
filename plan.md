@@ -669,3 +669,15 @@ Ajuste hecho en dev (en 10 preguntas): la ronda 1 busca solo por vector (la mezc
 **H6 — se cumple.** Cadena@10, bucle + JEV − una pasada con 60: **+0.073 (IC95 +0.033..+0.120)**: ≥ +0.05 y el IC excluye 0. Secundarias: − opción 1 +0.100 (+0.047..+0.160); − bucle sin JEV +0.153 (+0.087..+0.227); − una pasada con 30 +0.060 (+0.020..+0.107). Por saltos (cadena@10): 2 → 0.95 vs 0.88; 3 → 0.46 vs 0.38; 4 → 0.50 vs 0.33.
 
 **Lectura:** la ganancia se sostiene en preguntas nuevas, más chica que en dev (+0.235 en 34 preguntas; esperable por el tamaño de dev y porque aquí 75% son de 2 saltos). El cuaderno sin JEV empeora a la búsqueda simple: lo que hace funcionar el bucle es que JEV escoja las frases y juzgue con ellas. JEV que reordena sin descartar (una pasada) ya no daña (+0.03–0.04 sobre opción 1), a diferencia de la opción 2 que descartaba. Pendientes: reordenador estándar (Fase 1), abstención por cobertura (Fase 3), y dominios de empresa / español (Fase 4).
+
+---
+
+## 26. Fase 3 — abstención: dev y pre-registro (3 de octubre de 2026)
+
+*Escrito después de dev (memoria MuSiQue de §20, 34 con respuesta + 48 sin respuesta; `results/*-musique-abstain-dev.md`) y antes de tocar la memoria de prueba.*
+
+**Dev (AUROC, mayor = separa mejor contestables de no contestables):** filtro anterior (JEV sobre los 5 primeros del vector) 0.771; cuaderno `answer_stated` 0.765; cuaderno `1 − missing_link` 0.767; cobertura (media de ambas) 0.767; máximo `answers_query` del bucle 0.690; cuaderno + 5 mejores pasajes del bucle 0.738. **Media(filtro anterior, cobertura del cuaderno) 0.807** (mejor exactitud balanceada 0.765 con umbral 0.31).
+
+Diagnóstico: en las preguntas con respuesta cuya cadena el bucle sí trajo completa (27), la cobertura separa a 0.816; en las 7 con cadena incompleta la cobertura es baja (0.15), que es lo correcto (no hay evidencia suficiente en lo recuperado). Ninguna señal sola llega a 0.85 en dev.
+
+**Pre-registro H7.** Memoria nueva MuSiQue train con `--musique-salt b --musique-pages 80` (5,161 párrafos; 150 con respuesta + 150 sin respuesta; nunca usada). Señal primaria: media(filtro anterior, cobertura del cuaderno); umbral congelado 0.31. Meta del plan: AUROC ≥ 0.85 y exactitud balanceada ≥ 0.80. Secundarias: AUROC de cada señal y del filtro anterior solo, con IC95 por remuestreo de preguntas. Una sola corrida: `--dataset musique --musique-split train --musique-salt b --musique-pages 80 --mode all --abstain --abstain-threshold 0.31`. La misma corrida da cadena@10 del bucle en esa memoria (réplica de H6 en otra muestra).

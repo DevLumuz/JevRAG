@@ -147,3 +147,11 @@ var CoverageQuestions = map[string]jev.Question{
 		},
 	},
 }
+
+// CoverageWithPassages adds the explorer's best passages to the coverage
+// state, for facts the notebook did not copy.
+type CoverageWithPassages struct {
+	Query      string     `json:"query"`
+	KnownFacts []FactView `json:"known_facts"`
+	Passages   []Passage  `json:"passages"`
+}
