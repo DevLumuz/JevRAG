@@ -3,6 +3,7 @@ package judge_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"jev/internal/graphmodel"
@@ -194,5 +195,65 @@ func TestJEVJudge_Budget(t *testing.T) {
 	}
 	if calls != 3 || len(client.Calls) != 3 {
 		t.Errorf("successful calls = %d, client calls = %d; want 3, 3", calls, len(client.Calls))
+	}
+}
+
+type fakeGen struct {
+	text    string
+	prompts []string
+}
+
+func (f *fakeGen) GenerateJSON(_ context.Context, prompt string, _ map[string]any) (string, int64, int64, error) {
+	f.prompts = append(f.prompts, prompt)
+	return f.text, 500, 20, nil
+}
+
+func TestLLMJudge(t *testing.T) {
+	tests := []struct {
+		name      string
+		text      string
+		confirmed []*graphmodel.Node
+		want      judge.Decision
+		wantErr   bool
+	}{
+		{"direct sufficient", `{"relevance":"direct","sufficient":true,"contradicts":false}`, nil, judge.Decision{Tier: judge.Direct, Confidence: 1, Sufficient: true}, false},
+		{"contradiction overrides", `{"relevance":"high","sufficient":true,"contradicts":true}`, []*graphmodel.Node{{Content: "c"}}, judge.Decision{Tier: judge.Irrelevant, Confidence: 1}, false},
+		{"contradiction ignored without confirmed", `{"relevance":"weak","sufficient":false,"contradicts":true}`, nil, judge.Decision{Tier: judge.Weak, Confidence: 1}, false},
+		{"bad tier", `{"relevance":"maybe","sufficient":false,"contradicts":false}`, nil, judge.Decision{}, true},
+		{"not json", `nope`, nil, judge.Decision{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &fakeGen{text: tt.text}
+			j := judge.NewLLMJudge(g)
+			d, err := j.ScoreEdge(context.Background(), graphmodel.Edge{T: &graphmodel.Node{Key: "CIVIL ACT / Article. 1", Content: "cand"}}, "q", tt.confirmed)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && d != tt.want {
+				t.Errorf("Decision = %+v, want %+v", d, tt.want)
+			}
+			if !strings.Contains(g.prompts[0], "CIVIL ACT / Article. 1") || !strings.Contains(g.prompts[0], "direct:") {
+				t.Error("prompt must carry the candidate id and the tier definitions")
+			}
+		})
+	}
+}
+
+func TestLLMJudge_BudgetAndTokens(t *testing.T) {
+	j := judge.NewLLMJudge(&fakeGen{text: `{"relevance":"weak","sufficient":false,"contradicts":false}`})
+	j.MaxInputTokens = 1000
+	var err error
+	calls := 0
+	for ; calls < 5; calls++ {
+		if _, err = j.ScoreEdge(context.Background(), graphmodel.Edge{T: &graphmodel.Node{}}, "q", nil); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, judge.ErrBudgetExceeded) || calls != 2 {
+		t.Errorf("calls = %d, err = %v; want 2 then ErrBudgetExceeded", calls, err)
+	}
+	if in, out := j.Tokens(); in != 1000 || out != 40 {
+		t.Errorf("Tokens = %d, %d", in, out)
 	}
 }
