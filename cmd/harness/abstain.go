@@ -68,7 +68,7 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		top := retrieval.VectorSearch(qEmb[q.ID], bench.Nodes, 5)
 		ev := judge.EvidenceState{Query: q.Text}
 		for _, s := range top {
-			ev.Evidence = append(ev.Evidence, judge.EvidenceItem{ID: s.Node.Key, Text: s.Node.Content})
+			ev.Evidence = append(ev.Evidence, judge.EvidenceItem{ID: s.Node.Key, Text: truncateRunes(s.Node.Content, probe.MaxPassageChars)})
 		}
 		byKey := map[string]*graphmodel.Node{}
 		for _, n := range bench.Nodes {
@@ -78,8 +78,8 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		var passages []notebook.Passage
 		for _, k := range tr.Ranked[:min(5, len(tr.Ranked))] {
 			n := byKey[k]
-			lev.Evidence = append(lev.Evidence, judge.EvidenceItem{ID: n.Key, Text: n.Content})
-			passages = append(passages, notebook.Passage{Title: bench.Source(n), Text: n.Content})
+			lev.Evidence = append(lev.Evidence, judge.EvidenceItem{ID: n.Key, Text: truncateRunes(n.Content, probe.MaxPassageChars)})
+			passages = append(passages, notebook.Passage{Title: bench.Source(n), Text: truncateRunes(n.Content, probe.MaxPassageChars)})
 		}
 		items := []probe.Item{
 			{State: ev, Questions: judge.SufficiencyQuestions()},
