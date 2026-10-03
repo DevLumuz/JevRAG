@@ -145,7 +145,7 @@ func (e *Explorer) Explore(ctx context.Context, query string, queryEmb []float64
 		if cfg.Heuristic {
 			for _, i := range idx {
 				n := fresh[i]
-				sents := notebook.SplitSentences(n.Content)
+				sents := sentencesOf(n)
 				best := bestOverlap(query+" "+factText(facts), sents)
 				if best >= 0 {
 					newFacts = append(newFacts, factP{notebook.Fact{Text: sents[best], Source: e.Title(n)}, 1, n})
@@ -154,7 +154,7 @@ func (e *Explorer) Explore(ctx context.Context, query string, queryEmb []float64
 		} else if cfg.Sentences == "rerank" {
 			for _, i := range idx {
 				n := fresh[i]
-				sents := notebook.SplitSentences(n.Content)
+				sents := sentencesOf(n)
 				q := withNotebook(query, plain(facts))
 				pairs := make([][2]string, len(sents))
 				for j, st := range sents {
@@ -180,7 +180,7 @@ func (e *Explorer) Explore(ctx context.Context, query string, queryEmb []float64
 			var sentText []string
 			for _, i := range idx {
 				n := fresh[i]
-				for _, s := range notebook.SplitSentences(n.Content) {
+				for _, s := range sentencesOf(n) {
 					items = append(items, probe.Item{State: notebook.SentenceState{
 						Query: query, KnownFacts: notebook.View(plain(facts)), Source: e.Title(n), Sentence: s,
 					}, Questions: notebook.SentenceQuestions})
@@ -395,6 +395,19 @@ func truncate(s string, n int) string {
 	r := []rune(s)
 	if len(r) > n {
 		return string(r[:n])
+	}
+	return s
+}
+
+// maxSentences bounds the sentences read from one passage (a long statute
+// can hold thousands; short paragraphs are unaffected).
+const maxSentences = 25
+
+// sentencesOf splits the part of a passage JEV sees into sentences.
+func sentencesOf(n *graphmodel.Node) []string {
+	s := notebook.SplitSentences(truncate(n.Content, probe.MaxPassageChars))
+	if len(s) > maxSentences {
+		s = s[:maxSentences]
 	}
 	return s
 }

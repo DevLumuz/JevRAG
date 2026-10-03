@@ -708,3 +708,17 @@ Diagnóstico: en las preguntas con respuesta cuya cadena el bucle sí trajo comp
 | **Este trabajo** | MuSiQue train, 150 preguntas, 3,402 pasajes | Gemini embedding 81.7 → 85.4 R@5; cadena@10 72.7 → 82.7 | **+3.7 R@5, +10.0 cadena@10** | JEV US$0.0018, sin generación ni indexado con LLM |
 
 Lectura: la ganancia del bucle con cuaderno está en el mismo orden que la de los métodos de referencia con LLM, con un costo por consulta mucho menor y sin generar texto. No es comparable en cifras absolutas (memoria 3.4× más chica, otra muestra, otro embedding base). Siguiente paso para comparar de igual a igual: correr el bucle en el conjunto exacto de HippoRAG 2 (1,000 preguntas MuSiQue, 11,656 pasajes) y en 2Wiki/HotpotQA.
+
+---
+
+## 29. Pre-registro H9 — el bucle en leyes (KoBLEX), sin ajustar nada (3 de octubre de 2026)
+
+*Escrito antes de correr. Prueba fuera de dominio: la configuración del bucle es la congelada en §24 (MuSiQue); en KoBLEX no se ajusta nada.*
+
+**Qué se prueba:** que el bucle con cuaderno sirve en leyes (artículos largos, vocabulario técnico, preguntas con caso y contexto, artículos que se citan), no solo en Wikipedia.
+
+**Datos:** split test de KoBLEX (el mismo de §19), memoria de 44,261 artículos con los embeddings ya pagados. Única adaptación de ingeniería, sin efecto en MuSiQue: JEV lee las frases de los primeros 6,000 caracteres de cada artículo (lo mismo que ya veía al calificar), máximo 25 frases por pasaje; el índice de palabras clave usa el texto embebido (cortado a 8,500 caracteres).
+
+**H9 (primaria):** R@5 del bucle + JEV ≥ R@5 de la opción 2 en test (0.858, §19) y cadena completa@10 ≥ 0.833 (opción 2). Comparación pareada por pregunta contra la opción 2 (archivo `results/20261003-013229-option2-test.json`) con IC95. **Secundaria:** por número de artículos (1, 2, 3), en especial las preguntas de 3 artículos; contra la opción 1 (vector) en la misma corrida. Tope de gasto: `--max-jev-tokens 14000000` (~US$0.59).
+
+Corrida: `--dataset koblex --mode test --explore --variants koblex --max-jev-tokens 14000000`.

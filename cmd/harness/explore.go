@@ -6,13 +6,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"jev/internal/embeddings"
 	"jev/internal/evaluator"
 	"jev/internal/explorer"
-	"jev/internal/graphmodel"
 	"jev/internal/jev"
 	"jev/internal/probe"
 	"jev/internal/rerank"
@@ -110,6 +110,15 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		}
 	}
 
+	if cfg.exVariants == "koblex" { // plan §29: out-of-domain test, frozen loop
+		variants = []exploreVariant{
+			{"vector, question only (option 1)", vecOnly},
+			{"notebook loop + JEV", func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
+				return ex.Explore(ctx, q.Text, qEmb[q.ID], loop)
+			}},
+		}
+	}
+
 	type row struct {
 		name     string
 		outcomes []evaluator.QueryOutcome
@@ -118,6 +127,7 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		tokens   int64
 	}
 	var rows []row
+	var spent int64
 	for _, v := range variants {
 		r := row{name: v.name}
 		for i, q := range answerable {
@@ -126,12 +136,15 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			if err != nil {
 				return fmt.Errorf("%s · %s: %w", v.name, q.ID, err)
 			}
-			got := tr.Ranked
+			got := bench.Canon(tr.Ranked)
 			r.outcomes = append(r.outcomes, evaluator.QueryOutcome{ID: q.ID, Expected: q.Gold, Got: got,
 				Hops: q.Hops, Latency: time.Since(start), JudgeCalls: tr.Calls})
 			r.traces = append(r.traces, tr)
 			r.calls += tr.Calls
 			r.tokens += tr.Tokens
+			if spent += tr.Tokens; cfg.maxJEV > 0 && spent > cfg.maxJEV {
+				return fmt.Errorf("JEV budget reached: %d paid tokens > --max-jev-tokens %d (results so far are cached)", spent, cfg.maxJEV)
+			}
 			if (i+1)%10 == 0 {
 				log.Printf("  %s: %d/%d", v.name, i+1, len(answerable))
 			}
@@ -166,11 +179,19 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		fmt.Fprintf(&b, "- notebook loop + JEV − %s: %+.3f [%+.3f..%+.3f]\n", r.name, m, lo, hi)
 	}
 	b.WriteString("\n## By number of hops (chain@10)\n\n| system |")
-	hops := []int{2, 3, 4}
+	hopSet := map[int]bool{}
+	for _, q := range answerable {
+		hopSet[q.Hops] = true
+	}
+	var hops []int
+	for h := range hopSet {
+		hops = append(hops, h)
+	}
+	sort.Ints(hops)
 	for _, h := range hops {
 		fmt.Fprintf(&b, " %d hops |", h)
 	}
-	b.WriteString("\n|---|---|---|---|\n")
+	b.WriteString("\n|---|" + strings.Repeat("---|", len(hops)) + "\n")
 	for _, r := range rows {
 		fmt.Fprintf(&b, "| %s |", r.name)
 		for _, h := range hops {
@@ -233,8 +254,10 @@ func newExplorer(cfg config, bench *benchmark, querySpace *embedSpace) (*explore
 	}
 	title := bench.Source
 	ex := &explorer.Explorer{
-		Nodes:   bench.Nodes,
-		Keyword: retrieval.NewBM25(bench.Nodes, func(n *graphmodel.Node) string { return title(n) + " " + n.Content }),
+		Nodes: bench.Nodes,
+		// Index the embedded text (title + content, cut at maxEmbedChars): very
+		// long statutes stay bounded; for short paragraphs it is the same tokens.
+		Keyword: retrieval.NewBM25(bench.Nodes, bench.DocText),
 		Title:   title,
 		JEV:     client, Model: cfg.jevModel, Cache: cache, Conc: cfg.concurrency,
 		Embed: func(ctx context.Context, text string) ([]float64, error) {
