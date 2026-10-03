@@ -15,6 +15,7 @@ import (
 	"jev/internal/graphmodel"
 	"jev/internal/jev"
 	"jev/internal/probe"
+	"jev/internal/rerank"
 	"jev/internal/retrieval"
 )
 
@@ -30,35 +31,10 @@ type exploreVariant struct {
 // runExplore is Phase 2: the notebook loop against single-pass controls on
 // the answerable questions of the selected split.
 func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQuestion, qEmb map[string][]float64, querySpace *embedSpace) error {
-	client, err := jev.NewHTTPClient(jev.Options{Model: cfg.jevModel})
+	ex, loop, err := newExplorer(cfg, bench, querySpace)
 	if err != nil {
 		return err
 	}
-	cache, err := probe.OpenCache(filepath.Join("data", "probe", "cache.jsonl"))
-	if err != nil {
-		return err
-	}
-	title := bench.Source
-	ex := &explorer.Explorer{
-		Nodes:   bench.Nodes,
-		Keyword: retrieval.NewBM25(bench.Nodes, func(n *graphmodel.Node) string { return title(n) + " " + n.Content }),
-		Title:   title,
-		JEV:     client, Model: cfg.jevModel, Cache: cache, Conc: cfg.concurrency,
-		Embed: func(ctx context.Context, text string) ([]float64, error) {
-			v, err := embeddings.EmbedAll(ctx, querySpace.client, querySpace.store, []string{text},
-				embeddings.RunOptions{Confirm: cfg.confirmEmbed, Log: func(string, ...any) {}})
-			if err != nil {
-				return nil, err
-			}
-			r, err := reduceAll(v, cfg.dims)
-			if err != nil {
-				return nil, err
-			}
-			return r[0], nil
-		},
-	}
-	loop := explorer.Config{Rounds: cfg.exRounds, PerRound: cfg.exPerRound, ReadTop: cfg.exReadTop,
-		MaxFacts: 8, FactsPerPass: 2, FactThreshold: cfg.exFactThreshold}
 	heur := loop
 	heur.Heuristic = true
 
@@ -81,14 +57,48 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			return ex.Explore(ctx, q.Text, qEmb[q.ID], heur)
 		}},
 		{"vector single pass + JEV scores 30", func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
-			return ex.Single(ctx, q.Text, qEmb[q.ID], 30, false)
+			return ex.Single(ctx, q.Text, qEmb[q.ID], 30, "jev")
 		}},
 		{fmt.Sprintf("vector single pass + JEV scores %d (equal budget)", cfg.exControlN), func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
-			return ex.Single(ctx, q.Text, qEmb[q.ID], cfg.exControlN, false)
+			return ex.Single(ctx, q.Text, qEmb[q.ID], cfg.exControlN, "jev")
 		}},
 		{"notebook loop + JEV", func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
 			return ex.Explore(ctx, q.Text, qEmb[q.ID], loop)
 		}},
+	}
+
+	if cfg.exVariants == "phase1" {
+		rr, err := rerank.Open(cfg.rerankURL, cfg.rerankModel, filepath.Join("data", "rerank", "cache.jsonl"))
+		if err != nil {
+			return err
+		}
+		ex.Rerank = rr.Score
+		with := func(passages, sentences string) explorer.Config {
+			c := loop
+			c.Passages, c.Sentences = passages, sentences
+			return c
+		}
+		single := func(n int, who string) func(context.Context, benchQuestion) (*explorer.Trace, error) {
+			return func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
+				return ex.Single(ctx, q.Text, qEmb[q.ID], n, who)
+			}
+		}
+		explore := func(c explorer.Config) func(context.Context, benchQuestion) (*explorer.Trace, error) {
+			return func(ctx context.Context, q benchQuestion) (*explorer.Trace, error) {
+				return ex.Explore(ctx, q.Text, qEmb[q.ID], c)
+			}
+		}
+		variants = []exploreVariant{
+			{"vector, question only (option 1)", vecOnly},
+			{"single pass + JEV scores 30", single(30, "jev")},
+			{"single pass + reranker scores 30", single(30, "rerank")},
+			{"single pass + reranker scores 60", single(60, "rerank")},
+			{"single pass + JEV & reranker mean, 30", single(30, "mix")},
+			{"notebook loop · reranker scores, reranker picks sentences (no JEV)", explore(with("rerank", "rerank"))},
+			{"notebook loop · reranker scores, JEV picks sentences", explore(with("rerank", "jev"))},
+			{"notebook loop · JEV & reranker mean scores, JEV picks sentences", explore(with("mix", "jev"))},
+			{"notebook loop + JEV", explore(loop)},
+		}
 	}
 
 	type row struct {
@@ -172,7 +182,7 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 	}
 	fmt.Print(b.String())
 	stamp := time.Now().Format("20060102-150405")
-	out := filepath.Join(cfg.resultsDir, fmt.Sprintf("%s-%s-explore-%s.md", stamp, bench.Name, cfg.mode))
+	out := filepath.Join(cfg.resultsDir, fmt.Sprintf("%s-%s-explore-%s-%s.md", stamp, bench.Name, cfg.exVariants, cfg.mode))
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
@@ -199,4 +209,39 @@ func complete(o evaluator.QueryOutcome, k int) float64 {
 		return 1
 	}
 	return 0
+}
+
+// newExplorer builds the notebook explorer over the benchmark's memory and the
+// frozen loop configuration (plan.md §24).
+func newExplorer(cfg config, bench *benchmark, querySpace *embedSpace) (*explorer.Explorer, explorer.Config, error) {
+	client, err := jev.NewHTTPClient(jev.Options{Model: cfg.jevModel})
+	if err != nil {
+		return nil, explorer.Config{}, err
+	}
+	cache, err := probe.OpenCache(filepath.Join("data", "probe", "cache.jsonl"))
+	if err != nil {
+		return nil, explorer.Config{}, err
+	}
+	title := bench.Source
+	ex := &explorer.Explorer{
+		Nodes:   bench.Nodes,
+		Keyword: retrieval.NewBM25(bench.Nodes, func(n *graphmodel.Node) string { return title(n) + " " + n.Content }),
+		Title:   title,
+		JEV:     client, Model: cfg.jevModel, Cache: cache, Conc: cfg.concurrency,
+		Embed: func(ctx context.Context, text string) ([]float64, error) {
+			v, err := embeddings.EmbedAll(ctx, querySpace.client, querySpace.store, []string{text},
+				embeddings.RunOptions{Confirm: cfg.confirmEmbed, Log: func(string, ...any) {}})
+			if err != nil {
+				return nil, err
+			}
+			r, err := reduceAll(v, cfg.dims)
+			if err != nil {
+				return nil, err
+			}
+			return r[0], nil
+		},
+	}
+	loop := explorer.Config{Rounds: cfg.exRounds, PerRound: cfg.exPerRound, ReadTop: cfg.exReadTop,
+		MaxFacts: 8, FactsPerPass: 2, FactThreshold: cfg.exFactThreshold}
+	return ex, loop, nil
 }

@@ -173,3 +173,12 @@ func (j *JEVJudge) EvidenceSufficiency(ctx context.Context, query string, eviden
 	}
 	return a.Noul, nil
 }
+
+// SufficiencyQuestions is the question EvidenceSufficiency asks (the earlier
+// abstention gate), for callers that run it through their own cache.
+func SufficiencyQuestions() map[string]jev.Question {
+	return map[string]jev.Question{qSufficient: jev.Noul(evidenceInstructions)}
+}
+
+// SufficiencyAnswer reads EvidenceSufficiency's probability from a response.
+func SufficiencyAnswer(r *jev.Response) float64 { return r.Answers[qSufficient].Noul }

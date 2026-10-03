@@ -113,3 +113,37 @@ var PassageQuestions = map[string]jev.Question{
 		},
 	},
 }
+
+// CoverageState is what JEV sees to decide whether the notebook answers the
+// question: only the question and the collected facts.
+type CoverageState struct {
+	Query      string     `json:"query"`
+	KnownFacts []FactView `json:"known_facts"`
+}
+
+// CoverageQuestions decide abstention from the notebook (plan.md §22.3,
+// Phase 3): is the final answer stated, and is a link of the chain missing?
+var CoverageQuestions = map[string]jev.Question{
+	"answer_stated": {
+		Type: "noul",
+		Instructions: jev.Ordered{
+			{Key: "question", Value: "Taken together, do `known_facts` state the final answer to `query`?"},
+			{Key: "focus", Value: "Answering may need several facts chained together: one fact identifies an item that `query` describes, the next states something about that item. Count only what the facts state; do not use outside knowledge."},
+		},
+		Criteria: jev.Ordered{
+			{Key: "true", Value: "Following the facts from one to the next identifies every item `query` refers to and ends in the value `query` asks for."},
+			{Key: "false", Value: "A link is missing (an item `query` depends on is never identified, or nothing states the asked value for it), the facts concern a different item, or they only give background."},
+		},
+	},
+	"missing_link": {
+		Type: "noul",
+		Instructions: jev.Ordered{
+			{Key: "question", Value: "Does `query` depend on an item that no fact in `known_facts` identifies?"},
+			{Key: "focus", Value: "`query` often refers to items by description (\"the company that makes X\", \"the city where Y was born\"). Check each description against the facts."},
+		},
+		Criteria: jev.Ordered{
+			{Key: "true", Value: "At least one described item, or the value asked for it, is not stated by any fact."},
+			{Key: "false", Value: "Every described item is identified by some fact and the asked value is stated."},
+		},
+	},
+}

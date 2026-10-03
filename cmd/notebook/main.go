@@ -30,6 +30,7 @@ import (
 	"jev/internal/jev"
 	"jev/internal/notebook"
 	"jev/internal/probe"
+	"jev/internal/rerank"
 	"jev/internal/retrieval"
 )
 
@@ -44,6 +45,7 @@ func main() {
 	conc := flag.Int("concurrency", 8, "parallel requests")
 	maxTok := flag.Int64("max-jev-tokens", 8_000_000, "cap on paid input tokens per stage (~US$0.042 per million)")
 	only := flag.String("only", "t3,t2", "stages to run")
+	rerankURL := flag.String("rerank-url", "", "T2: also score with the cross-encoder at this URL (tools/rerank_server.py), e.g. http://127.0.0.1:8765/score")
 	limit := flag.Int("limit", 0, "use only the first N targets and N paragraphs (smoke test)")
 	flag.Parse()
 
@@ -70,7 +72,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	r := &runner{ctx: ctx, client: client, model: *model, cache: cache, conc: *conc, maxTok: *maxTok}
+	var rrc *rerank.Client
+	if *rerankURL != "" {
+		if rrc, err = rerank.Open(*rerankURL, "bge-reranker-v2-m3-int8", filepath.Join("data", "rerank", "cache.jsonl")); err != nil {
+			log.Fatal(err)
+		}
+	}
+	r := &runner{rerank: rrc, ctx: ctx, client: client, model: *model, cache: cache, conc: *conc, maxTok: *maxTok}
 
 	var picks map[string]notebook.Fact
 	if strings.Contains(*only, "t3") || strings.Contains(*only, "t2") {
@@ -87,6 +95,7 @@ func main() {
 }
 
 type runner struct {
+	rerank *rerank.Client
 	ctx    context.Context
 	client jev.Client
 	model  string
@@ -323,6 +332,7 @@ func (r *runner) t2(in notebook.ProbeInput, picks map[string]notebook.Fact) stri
 	}
 
 	var items []probe.Item
+	var rrPairs [][2]string
 	type ref struct{ cond, target, passage int }
 	var refs []ref
 	for ci, c := range conds {
@@ -341,14 +351,25 @@ func (r *runner) t2(in notebook.ProbeInput, picks map[string]notebook.Fact) stri
 					Questions: notebook.PassageQuestions,
 				})
 				refs = append(refs, ref{ci, ti, pi})
+				rrPairs = append(rrPairs, [2]string{withNotebook(t.Query, facts), p.Title + ": " + p.Text})
 			}
 		}
 	}
 	log.Printf("T2: %d calls (%d targets, %d conditions)", len(items), len(in.Targets), len(conds))
 	resps := r.run(items)
+	var rr []float64
+	if r.rerank != nil {
+		var err error
+		if rr, err = r.rerank.Score(r.ctx, rrPairs); err != nil {
+			log.Fatalf("notebook: %v", err)
+		}
+	}
 
 	// scores[cond][target][passage][feature]
 	feats := []string{"next_needed", "answers_query", "max"}
+	if rr != nil {
+		feats = append(feats, "reranker", "mean(max, reranker)")
+	}
 	scores := make([][][]map[string]float64, len(conds))
 	for ci := range conds {
 		scores[ci] = make([][]map[string]float64, len(in.Targets))
@@ -357,6 +378,10 @@ func (r *runner) t2(in notebook.ProbeInput, picks map[string]notebook.Fact) stri
 		a := resps[k].Answers
 		f := map[string]float64{"next_needed": a["next_needed"].Noul, "answers_query": a["answers_query"].Noul}
 		f["max"] = math.Max(f["next_needed"], f["answers_query"])
+		if rr != nil {
+			f["reranker"] = rr[k]
+			f["mean(max, reranker)"] = (f["max"] + rr[k]) / 2
+		}
 		if scores[rf.cond][rf.target] == nil {
 			scores[rf.cond][rf.target] = make([]map[string]float64, len(in.Targets[rf.target].Passages))
 		}
@@ -446,6 +471,20 @@ func (r *runner) t2(in notebook.ProbeInput, picks map[string]notebook.Fact) stri
 			}
 			b.WriteString("\n")
 		}
+		if rr != nil {
+			b.WriteString("\nSame condition, JEV `max` − reranker, and mean − reranker (Phase 1 gate: JEV must add ≥ 0.02 AUC over the reranker):\n\n")
+			for ci := range conds {
+				fmt.Fprintf(&b, "- %s:", conds[ci].name)
+				for _, f := range []string{"max", "mean(max, reranker)"} {
+					for j, ti := range tids {
+						vals[j] = aucOf(ci, ti, f) - aucOf(ci, ti, "reranker")
+					}
+					m, lo, hi := probe.ClusterMean(vals, cl, 2000, uint64(20+ci))
+					fmt.Fprintf(&b, " `%s` %+.3f [%+.3f..%+.3f];", f, m, lo, hi)
+				}
+				b.WriteString("\n")
+			}
+		}
 		b.WriteString("\n")
 	}
 	b.WriteString("Gate (plan §22.3 P1): oracle raises middle-step AUC by ≥ 0.10 and wrong facts lower it by no more than 0.05.\n")
@@ -458,4 +497,17 @@ func truncate(s string, n int) string {
 		return string(r[:n])
 	}
 	return s
+}
+
+// withNotebook is the reranker's query: the question plus the notebook facts
+// (same form as internal/explorer).
+func withNotebook(query string, facts []notebook.Fact) string {
+	if len(facts) == 0 {
+		return query
+	}
+	parts := make([]string, len(facts))
+	for i, f := range facts {
+		parts[i] = f.Text
+	}
+	return query + "\nKnown facts: " + strings.Join(parts, " ")
 }

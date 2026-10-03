@@ -70,24 +70,30 @@ type config struct {
 	queryTask      string
 	queryVariant   string
 
-	musiqueN        int
-	inferEdges      string
-	gate            bool
-	gateTop         int
-	gateThreshold   float64
-	probeBank       bool
-	notebookProbe   bool
-	explore         bool
-	musiqueSplit    string
-	musiquePages    int
-	jevModel        string
-	exRounds        int
-	exPerRound      int
-	exReadTop       int
-	exControlN      int
-	exFactThreshold float64
-	llmModel        string
-	maxLLM          int64
+	musiqueN         int
+	inferEdges       string
+	gate             bool
+	gateTop          int
+	gateThreshold    float64
+	probeBank        bool
+	notebookProbe    bool
+	explore          bool
+	musiqueSplit     string
+	musiqueSalt      string
+	abstain          bool
+	abstainThreshold float64
+	exVariants       string
+	rerankURL        string
+	rerankModel      string
+	musiquePages     int
+	jevModel         string
+	exRounds         int
+	exPerRound       int
+	exReadTop        int
+	exControlN       int
+	exFactThreshold  float64
+	llmModel         string
+	maxLLM           int64
 }
 
 func parseFlags() config {
@@ -96,6 +102,9 @@ func parseFlags() config {
 	flag.IntVar(&c.option, "option", 1, "retrieval option 1..5 (see plan.md section 6)")
 	flag.StringVar(&c.dataset, "dataset", "koblex", "benchmark: koblex (statutes, explicit citations) or musique (Wikipedia paragraphs, inferred links, unanswerable questions)")
 	flag.StringVar(&c.musiqueSplit, "musique-split", "validation", "musique: split the memory is built from; train = fresh questions never used for tuning")
+	flag.BoolVar(&c.abstain, "abstain", false, "plan v2 Phase 3: run the notebook loop on every question of --mode and decide abstention from the notebook, then exit")
+	flag.Float64Var(&c.abstainThreshold, "abstain-threshold", 0.5, "--abstain: answer when notebook coverage ≥ this (choose on dev, freeze for test)")
+	flag.StringVar(&c.musiqueSalt, "musique-salt", "", "musique: salt of the question sampling hash; a new salt draws a different memory (empty = the original draw)")
 	flag.IntVar(&c.musiquePages, "musique-pages", 20, "musique, non-validation splits: pages of 100 rows sampled evenly")
 	flag.IntVar(&c.musiqueN, "musique-n", 150, "musique: answerable and unanswerable questions sampled (each) to build the memory")
 	flag.StringVar(&c.inferEdges, "infer-edges", "both", "musique: inferred connections: mentions, similar or both")
@@ -105,6 +114,9 @@ func parseFlags() config {
 	flag.BoolVar(&c.probeBank, "build-probe-bank", false, "write labeled (query, passage) pairs from the dev split to data/probe and exit")
 	flag.BoolVar(&c.notebookProbe, "notebook-probe", false, "musique: plan v2 P1 — measure reach with notebook facts (T1) and write the T2/T3 probe inputs to data/probe, then exit (embeds a few hundred new query texts: needs --confirm-embed)")
 	flag.BoolVar(&c.explore, "explore", false, "plan v2 Phase 2: notebook loop vs. single-pass controls on the answerable questions of --mode, then exit")
+	flag.StringVar(&c.exVariants, "variants", "phase2", "--explore: phase2 (loop vs single pass) or phase1 (JEV vs cross-encoder reranker; needs tools/rerank_server.py)")
+	flag.StringVar(&c.rerankURL, "rerank-url", "http://127.0.0.1:8765/score", "--explore phase1: reranker server")
+	flag.StringVar(&c.rerankModel, "rerank-model", "bge-reranker-v2-m3-int8", "--explore phase1: reranker cache namespace (must match the server's --model-file)")
 	flag.StringVar(&c.jevModel, "jev-model", "jev-1.13.0", "--explore: JEV model (pinned; responses cached in data/probe/cache.jsonl)")
 	flag.IntVar(&c.exRounds, "rounds", 3, "--explore: search rounds of the notebook loop")
 	flag.IntVar(&c.exPerRound, "per-round", 10, "--explore: new passages judged per round")
@@ -255,6 +267,9 @@ func run(ctx context.Context, cfg config) error {
 	}
 	if cfg.notebookProbe {
 		return runNotebookProbe(ctx, cfg, bench, qEmb, querySpace)
+	}
+	if cfg.abstain {
+		return runAbstain(ctx, cfg, bench, qs, qEmb, querySpace)
 	}
 	if cfg.explore {
 		return runExplore(ctx, cfg, bench, qs, qEmb, querySpace)

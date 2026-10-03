@@ -120,8 +120,8 @@ func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchma
 	byHash := func(rows []*datasets.MuSiQueRow, salt string) {
 		sort.SliceStable(rows, func(i, j int) bool { return hash32(salt+rows[i].ID) < hash32(salt+rows[j].ID) })
 	}
-	byHash(ans, "a")
-	byHash(una, "u")
+	byHash(ans, cfg.musiqueSalt+"a")
+	byHash(una, cfg.musiqueSalt+"u")
 
 	chosen := ans[:min(cfg.musiqueN, len(ans))]
 	taken := map[string]bool{}
@@ -274,5 +274,5 @@ func musiqueName(cfg config) string {
 	if cfg.musiqueSplit == datasets.MuSiQueSplit {
 		return "musique"
 	}
-	return "musique-" + cfg.musiqueSplit
+	return "musique-" + cfg.musiqueSplit + cfg.musiqueSalt
 }
