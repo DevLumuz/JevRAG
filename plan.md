@@ -527,3 +527,21 @@ Corridas en test, una vez cada una: opciones 1, 2, 3 y 5. El análisis sigue la 
 **Criterio de escalar (sección 12) — no se cumple.** R@5 opción 5 − 3 = +0.078 (IC95 +0.044..+0.114), por debajo del umbral +0.15. Abstención: no medible en KoBLEX (no hay preguntas sin respuesta).
 
 **Lectura:** en KoBLEX el valor de JEV está en juzgar candidatos (barato: US$0.0012 por pregunta) y crece en las preguntas de 3 artículos; el grafo de citas con PPR no supera a la búsqueda vectorial, con o sin juez. Siguiente prueba: dominio sin citas explícitas y con preguntas sin respuesta (MuSiQue).
+
+---
+
+## 20. Segundo dominio: memoria sin citas (MuSiQue) — pre-registro y configuración congelada (3 de octubre de 2026)
+
+*Escrito después de correr dev (82 preguntas: 34 con respuesta, 48 sin respuesta) y antes de tocar test (218 preguntas).*
+
+**Memoria:** 4,757 párrafos de Wikipedia de 150 preguntas con respuesta + 150 sin respuesta (MuSiQue-Full, muestreadas por hash; una pregunta sin respuesta solo entra si el párrafo que le quitaron no está en la memoria compartida). Conexiones inferidas, sin citas: menciones de título (frase completa) + 5 vecinos más similares. Texto embebido: título — párrafo.
+
+**Lo observado en dev (exploratorio):** R@10 / cadena completa@10 — opción 1 0.819 / 0.588; opción 2 0.657 / 0.412; opción 3 0.833 / 0.618; opción 5 0.777 / 0.618. De los párrafos correctos que la opción 1 tenía en su top 10, la opción 2 descartó 15 de 47 "puente" (pasos intermedios) y 4 de 27 "finales"; la opción 5 conservó 36 de 47 puente. El filtro de suficiencia (JEV, 5 mejores pasajes) separa con AUC 0.65–0.77; mejor exactitud de abstención 0.71–0.73.
+
+**H3 — juzgar aislado pierde los puentes.** En test, R@10 de la opción 2 < R@10 de la opción 1 (IC95 de la diferencia pareada excluye 0).
+
+**H4 — navegar con contexto los recupera.** En test, cadena completa@10 de la opción 5 > opción 2 (IC95 excluye 0). Secundario: la diferencia por número de pasos (2, 3, 4), reportada sin prueba formal por el tamaño de los grupos.
+
+**H5 — saber abstenerse.** Exactitud de abstención en test con el filtro de suficiencia; meta del plan (sección 12): ≥ 0.85. Se reporta para cada opción.
+
+**Configuración congelada:** la misma de la sección 18 (30 semillas/candidatos, seed-temp 0.05, damping 0.3, 2 saltos, 5 vecinos, 60 llamadas). Filtro de suficiencia: 5 pasajes; umbral elegido en dev por exactitud balanceada: opción 1 → 0.38, opción 2 → 0.66, opción 3 → 0.29, opción 5 → 0.52.
