@@ -28,6 +28,9 @@ type Result struct {
 	Keys      []string // ranked, best first; empty when Abstained
 	Abstained bool     // the option judged the evidence insufficient
 	Judged    int      // judge calls made (0 for options without a judge)
+	// Sufficiency is the gate's probability that the evidence suffices
+	// (set only when a Gate ran).
+	Sufficiency float64
 }
 
 // Retriever is one retrieval option.

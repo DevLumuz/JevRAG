@@ -133,3 +133,42 @@ func (j *JEVJudge) ScoreEdge(ctx context.Context, edge graphmodel.Edge, query st
 func (j *JEVJudge) Tokens() (input, output int64) {
 	return j.inputTokens.Load(), j.outputTokens.Load()
 }
+
+const evidenceInstructions = "The passages in `evidence`, taken together, contain all the information " +
+	"needed to answer `query`. Answer yes only if nothing essential is missing."
+
+// EvidenceItem is one retrieved passage shown to the sufficiency check.
+type EvidenceItem struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// EvidenceState is the state for the final sufficiency check.
+type EvidenceState struct {
+	Query    string         `json:"query"`
+	Evidence []EvidenceItem `json:"evidence"`
+}
+
+// EvidenceSufficiency asks JEV, in one Noul call, how likely it is that the
+// retrieved passages together are enough to answer the query. It drives
+// abstention ("not enough evidence") for any retrieval option.
+func (j *JEVJudge) EvidenceSufficiency(ctx context.Context, query string, evidence []*graphmodel.Node) (float64, error) {
+	if j.MaxInputTokens > 0 && j.inputTokens.Load() >= j.MaxInputTokens {
+		return 0, ErrBudgetExceeded
+	}
+	st := EvidenceState{Query: query}
+	for _, n := range evidence {
+		st.Evidence = append(st.Evidence, EvidenceItem{ID: n.Key, Text: n.Content})
+	}
+	resp, err := j.client.SystemOne(ctx, st, map[string]jev.Question{qSufficient: jev.Noul(evidenceInstructions)})
+	if err != nil {
+		return 0, fmt.Errorf("judge: jev: %w", err)
+	}
+	j.inputTokens.Add(int64(resp.Usage.InputTokens))
+	j.outputTokens.Add(int64(resp.Usage.OutputTokens))
+	a, ok := resp.Answers[qSufficient]
+	if !ok {
+		return 0, fmt.Errorf("judge: jev response missing %q answer", qSufficient)
+	}
+	return a.Noul, nil
+}

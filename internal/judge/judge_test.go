@@ -257,3 +257,21 @@ func TestLLMJudge_BudgetAndTokens(t *testing.T) {
 		t.Errorf("Tokens = %d, %d", in, out)
 	}
 }
+
+func TestJEVJudge_EvidenceSufficiency(t *testing.T) {
+	client := &jev.FakeClient{Respond: func(_ any, qs map[string]jev.Question) (*jev.Response, error) {
+		return &jev.Response{Answers: map[string]jev.Answer{"sufficient": {Type: "noul", Noul: 0.83}}, Usage: jev.Usage{InputTokens: 50}}, nil
+	}}
+	j := judge.NewJEVJudge(client)
+	p, err := j.EvidenceSufficiency(context.Background(), "q", []*graphmodel.Node{{Key: "k1", Content: "t1"}, {Key: "k2", Content: "t2"}})
+	if err != nil || p != 0.83 {
+		t.Fatalf("p = %v, err = %v", p, err)
+	}
+	st := client.Calls[0].State.(judge.EvidenceState)
+	if st.Query != "q" || len(st.Evidence) != 2 || st.Evidence[1].ID != "k2" {
+		t.Errorf("state = %+v", st)
+	}
+	if in, _ := j.Tokens(); in != 50 {
+		t.Errorf("tokens = %d", in)
+	}
+}

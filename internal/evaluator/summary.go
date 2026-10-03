@@ -14,12 +14,14 @@ type QueryOutcome struct {
 	ShouldAbstain bool // ground truth; false for every KoBLEX question
 	Latency       time.Duration
 	JudgeCalls    int
-	Hops          int // reasoning steps (gold articles) the question needs
+	Hops          int     // reasoning steps (gold articles) the question needs
+	Sufficiency   float64 // sufficiency-gate probability, when a gate ran
 }
 
 // Report aggregates the metrics of section 10 of the plan over a split.
 type Report struct {
-	Queries            int
+	Queries            int             // all queries
+	Answerable         int             // queries with evidence to find (retrieval metrics use only these)
 	RecallAt           map[int]float64 // mean Recall@K, keyed by K
 	CompleteAt         map[int]float64 // share of queries with ALL expected keys in the top K
 	MRR                float64
@@ -30,28 +32,33 @@ type Report struct {
 	JudgeCalls         int
 }
 
-// Summarize computes mean Recall@K for each k in ks, MRR, abstention accuracy
-// and latency over all outcomes. An abstention counts as retrieving nothing.
+// Summarize computes retrieval metrics (Recall@K, complete chain@K, MRR) over
+// the answerable outcomes only — what was retrieved, whether or not the
+// system then abstained — and abstention accuracy and latency over all
+// outcomes. Retrieval quality and the decision to answer are reported apart.
 func Summarize(outcomes []QueryOutcome, ks []int) Report {
 	r := Report{Queries: len(outcomes), RecallAt: make(map[int]float64, len(ks)), CompleteAt: make(map[int]float64, len(ks))}
 	if len(outcomes) == 0 {
 		return r
 	}
 
-	ranked := make([]RankedResult, len(outcomes))
+	var ranked []RankedResult
 	abst := make([]AbstentionPrediction, len(outcomes))
 	lats := make([]time.Duration, len(outcomes))
 	var total time.Duration
 
 	for i, o := range outcomes {
-		for _, k := range ks {
-			rec := RecallAtK(o.Expected, o.Got, k)
-			r.RecallAt[k] += rec
-			if rec == 1 {
-				r.CompleteAt[k]++
+		if !o.ShouldAbstain {
+			r.Answerable++
+			for _, k := range ks {
+				rec := RecallAtK(o.Expected, o.Got, k)
+				r.RecallAt[k] += rec
+				if rec == 1 {
+					r.CompleteAt[k]++
+				}
 			}
+			ranked = append(ranked, RankedResult{Expected: o.Expected, Got: o.Got})
 		}
-		ranked[i] = RankedResult{Expected: o.Expected, Got: o.Got}
 		abst[i] = AbstentionPrediction{ShouldAbstain: o.ShouldAbstain, DidAbstain: o.Abstained}
 		if o.Abstained {
 			r.Abstained++
@@ -61,10 +68,12 @@ func Summarize(outcomes []QueryOutcome, ks []int) Report {
 		r.JudgeCalls += o.JudgeCalls
 	}
 
-	n := float64(len(outcomes))
-	for _, k := range ks {
-		r.RecallAt[k] /= n
-		r.CompleteAt[k] /= n
+	if r.Answerable > 0 {
+		n := float64(r.Answerable)
+		for _, k := range ks {
+			r.RecallAt[k] /= n
+			r.CompleteAt[k] /= n
+		}
 	}
 	r.MRR = MRR(ranked)
 	r.AbstentionAccuracy = AbstentionAccuracy(abst)

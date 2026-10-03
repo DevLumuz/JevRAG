@@ -17,6 +17,10 @@ func SplitDevTest(rows []*KoBLEXRow, devFraction float64) (dev, test []*KoBLEXRo
 	return dev, test
 }
 
+// InDev reports whether id falls in the dev split; SplitDevTest uses it, and
+// other datasets use it directly for the same stable, hash-based assignment.
+func InDev(id string, devFraction float64) bool { return inDev(id, devFraction) }
+
 func inDev(id string, devFraction float64) bool {
 	h := fnv.New32a()
 	h.Write([]byte(id))

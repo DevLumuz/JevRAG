@@ -119,3 +119,40 @@ func TestJudgedVector_PropagatesJudgeError(t *testing.T) {
 		t.Error("expected error from judge")
 	}
 }
+
+type fixedChecker struct {
+	p    float64
+	seen []string
+}
+
+func (f *fixedChecker) EvidenceSufficiency(_ context.Context, _ string, ev []*graphmodel.Node) (float64, error) {
+	for _, n := range ev {
+		f.seen = append(f.seen, n.Key)
+	}
+	return f.p, nil
+}
+
+func TestGate(t *testing.T) {
+	nodes := fixtureNodes()
+	byKey := map[string]*graphmodel.Node{}
+	for _, n := range nodes {
+		byKey[n.Key] = n
+	}
+	for _, tt := range []struct {
+		p       float64
+		abstain bool
+	}{{0.9, false}, {0.2, true}} {
+		chk := &fixedChecker{p: tt.p}
+		g := &retrieval.Gate{Inner: &retrieval.PlainVector{Nodes: nodes, K: 4}, Checker: chk, Nodes: byKey, TopN: 2, Threshold: 0.5}
+		res, err := g.Retrieve(context.Background(), query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Abstained != tt.abstain || res.Sufficiency != tt.p || len(res.Keys) != 4 || res.Judged != 1 {
+			t.Errorf("p=%v: result = %+v", tt.p, res)
+		}
+		if !reflect.DeepEqual(chk.seen, []string{"a", "b"}) {
+			t.Errorf("checker saw %v, want top 2 [a b]", chk.seen)
+		}
+	}
+}

@@ -62,3 +62,18 @@ func TestGroupByHops(t *testing.T) {
 		t.Errorf("GroupByHops = %v", g)
 	}
 }
+
+func TestSummarize_UnanswerableExcludedFromRecall(t *testing.T) {
+	outcomes := []evaluator.QueryOutcome{
+		{Expected: []string{"a"}, Got: []string{"a"}},               // answerable, found
+		{ShouldAbstain: true, Got: []string{"x"}, Abstained: true},  // correctly abstained
+		{ShouldAbstain: true, Got: []string{"y"}, Abstained: false}, // should have abstained
+	}
+	r := evaluator.Summarize(outcomes, []int{1})
+	if r.Queries != 3 || r.Answerable != 1 || !approx(r.RecallAt[1], 1) || !approx(r.MRR, 1) {
+		t.Errorf("report = %+v", r)
+	}
+	if !approx(r.AbstentionAccuracy, 2.0/3) {
+		t.Errorf("AbstentionAccuracy = %v, want 2/3", r.AbstentionAccuracy)
+	}
+}
