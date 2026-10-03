@@ -599,3 +599,29 @@ Contra errores que se arrastran: confianza acotada por la del padre, haz de 2 ra
 | 2 | Bucle de 2–3 rondas con cuaderno vs. una pasada con el mismo presupuesto | Cadena completa@10 ≥ control + 0.05 (IC excluye 0) |
 | 3 | Cobertura por requisito y abstención (oráculo / LLM pequeño / plantilla) vs. filtro actual y juez LLM | AUROC ≥ 0.85, exactitud balanceada ≥ 0.80 |
 | 4 | Prueba de producto: lector fijo, verificación de citas, español, inyección; ConditionalQA / LegalBench-RAG / MultiHop-RAG; conjunto sellado | Sí/no al producto |
+
+---
+
+## 23. Resultados P1 — pruebas del cuaderno en MuSiQue (3 de octubre de 2026)
+
+*Prueba de mecanismo sobre las 150 preguntas con respuesta de la memoria MuSiQue (incluye preguntas de dev y test de §20–21; no es evaluación final). Hechos "plata": la frase del párrafo oro de cada paso que contiene la respuesta de ese paso (382 de 386 exactas). Reportes: `results/probe/notebook-T{1,2,3}-musique.md`. Costo: Gemini ~US$0.005, JEV ~US$0.21.*
+
+**T1 — alcance (¿la siguiente búsqueda encuentra el párrafo del paso siguiente?).** Pasos intermedios (n = 63), alcance@30: pregunta sola (hoy) 0.62 → pregunta + hechos del cuaderno 0.90 → palabras clave de la entidad frontera 0.94 (techo con sub-pregunta resuelta: 0.94). Pasos finales: 0.88 → 0.98. BM25 con la pregunta sola es peor que vectores (0.33); el híbrido sin cuaderno no ayuda (0.51).
+
+**T3 — ¿JEV escoge la frase clave?** Top-1 contra la frase plata (386 párrafos, 3.6 frases de media):
+primera frase 0.68 · solapamiento de palabras 0.60–0.66 · **JEV choice 0.89** · JEV sí/no por frase 0.87. Pasos intermedios: 0.56 / 0.54 / **0.79** / 0.75 (top-2: 0.92 / 0.97). Párrafos donde la frase clave no es la primera: solapamiento 0.44, **JEV 0.84**. Problema: el choice eligió "none" en 70 de 386 (todos tenían el hecho) → en el bucle usar sí/no por frase o el máximo sin "none".
+
+**T2 — ¿el cuaderno ayuda a JEV a reconocer el siguiente eslabón?** AUC dentro de cada objetivo (oro vs. 4 no-oro del mismo pozo), pregunta `next_needed`:
+
+| estado | intermedios (63) | finales (150) |
+|---|---|---|
+| orden del pozo de búsqueda (referencia) | 0.817 | 0.933 |
+| sin cuaderno (hoy) | 0.786 | 0.897 |
+| hechos oráculo + frontera | **0.901** (+0.115, IC +0.050..+0.177) | **0.997** (+0.100) |
+| hechos oráculo solos | 0.893 (+0.107) | 0.988 |
+| hechos equivocados (otra pregunta) | 0.752 (−0.034, IC −0.088..+0.019) | 0.898 (+0.002) |
+| **hechos escogidos por JEV (T3)** | **0.871** (+0.085, IC +0.022..+0.150) | **0.974** (+0.077) |
+
+**Puerta P1 — se cumple:** el oráculo sube la AUC de intermedios +0.115 (≥ 0.10; el límite inferior del IC es +0.05) y los hechos equivocados la bajan −0.034 (≤ 0.05). Con hechos escogidos por el propio JEV se conserva ~75% de la ganancia.
+
+**Lectura:** el cuaderno ataca justo la falla de §21: (1) hace que la búsqueda alcance los puentes intermedios, (2) JEV escoge bien la frase clave (muy por encima de heurísticas) y (3) con esa frase en el estado JEV ordena mejor que sin ella y que el propio orden de búsqueda. Sin cuaderno, JEV queda por debajo del orden de búsqueda (0.786 vs 0.817), coherente con §21. Falta: la frontera (entidad) aquí es la respuesta oro; en el bucle real sale de la frase escogida (JEV no escribe), así que la búsqueda de la ronda 2 debe usar la frase completa (vector) + BM25 de la frase. Siguiente: Fase 2 en pequeño (bucle real de 2–3 rondas vs. una pasada con el mismo presupuesto) en un dev nuevo, y reordenador estándar (Fase 1) en cuanto se habilite huggingface.co.
