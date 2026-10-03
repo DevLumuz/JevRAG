@@ -20,6 +20,7 @@
 14. [División de trabajo](#14-división-de-trabajo)
 15. [Riesgos a vigilar](#15-riesgos-a-vigilar)
 16. [Glosario](#16-glosario)
+17. [Hipótesis de complejidad (pre-registro)](#17-hipótesis-de-complejidad-pre-registro)
 
 ---
 
@@ -465,3 +466,27 @@ Medido sobre el split de test, con umbrales ya congelados en dev.
 - **Recall@K**: proporción de resultados correctos encontrados entre los primeros K.
 - **MRR**: posición promedio (invertida) del primer resultado correcto.
 - **Abstención**: negarse a responder cuando la evidencia es insuficiente, en vez de alucinar.
+
+---
+
+## 17. Hipótesis de complejidad (pre-registro)
+
+*Escrita el 3 de octubre de 2026, después de correr las opciones 1 y 2 en dev y **antes** de construir las opciones 3 y 5 y de tocar el split de test. Este texto no se edita después de ver test; cualquier cambio posterior va en una sección nueva, fechada.*
+
+**Lo observado en dev (70 preguntas, exploratorio):** la opción 2 (JEV juzgando 30 candidatos por separado) sube Recall@5 de 0.783 a 0.879 frente a la opción 1. Por número de artículos necesarios: 1 artículo 1.00 → 1.00 (sin margen), 2 artículos 0.71 → 0.86 (+0.15, IC95 +0.075..+0.237), 3 artículos 0.74 → 0.79 (+0.05, IC95 0..+0.12). En 3 artículos el correcto estaba entre los 30 candidatos el 88% de las veces, pero JEV cubrió solo un tercio del hueco. Lectura: juzgar cada candidato aislado no reconoce los artículos "puente" de una cadena.
+
+**H1 — JEV como filtro (opción 2 vs. 1).** Cuando el artículo correcto está entre los candidatos, JEV lo sube. Métrica: ΔRecall@5 pareado por pregunta y "hueco cubierto" = (R@5 opción 2 − R@5 opción 1) / (alcanzable@30 − R@5 opción 1).
+
+**H2 — JEV navegando (opción 5 vs. 2 y vs. 3).** Con contexto de la cadena (de qué artículo viene la conexión y qué ya se confirmó), JEV recupera artículos puente que no reconoce aislados. Predicción: la ventaja de la opción 5 sobre la 2 **crece con el número de artículos necesarios** (1 < 2 < 3), y es mayor en preguntas cuyos artículos correctos están conectados por citas en el grafo.
+
+**Métricas por grupo (1, 2, 3 artículos):** Recall@5, Recall@10, cadena completa@10 (todos los correctos en el top 10), MRR, llamadas al juez y costo. Diferencias pareadas por pregunta con IC95 por bootstrap; tendencia entre grupos con prueba de permutación sobre la pendiente de Δ contra número de artículos.
+
+**Controles:** techo (1 artículo ya está en 1.00 con la opción 1), espacio (3 artículos compiten por 5 lugares; por eso también cadena completa@10), alcance (separar lo que estaba entre los candidatos de lo que no).
+
+**Regla de decisión (en test, una sola corrida, configuración congelada en dev y commiteada antes):**
+- H2 se apoya si Δ(opción 5 − opción 2) en Recall@10 es mayor en 3 artículos que en 1 artículo, la pendiente es positiva con p < 0.05 en la prueba de permutación, y el IC95 de Δ en 3 artículos excluye 0.
+- H2 se rechaza si la pendiente es ≤ 0 o el IC95 de Δ en 3 artículos incluye 0. Ambos resultados se reportan igual.
+- El criterio de escalar de la sección 12 (opción 5 vs. opción 3) se evalúa aparte, sin cambios.
+
+**Diseño fijado de la opción 5 (antes de verla correr):** mismo grafo y mismo Personalized PageRank que la opción 3; el juez (1) califica las semillas, que pesan en el reinicio del PPR como similitud × multiplicador, y (2) califica conexiones desde los artículos aceptados hacia sus vecinos, con contexto de origen y de lo confirmado, hasta 2 saltos y un tope de llamadas por pregunta; cada conexión juzgada pesa Weight × multiplicador (CatRAG). Las conexiones no juzgadas conservan su peso. La opción 3 es el mismo código sin juez.
+
