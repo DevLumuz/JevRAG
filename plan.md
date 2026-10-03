@@ -545,3 +545,23 @@ Corridas en test, una vez cada una: opciones 1, 2, 3 y 5. El análisis sigue la 
 **H5 — saber abstenerse.** Exactitud de abstención en test con el filtro de suficiencia; meta del plan (sección 12): ≥ 0.85. Se reporta para cada opción.
 
 **Configuración congelada:** la misma de la sección 18 (30 semillas/candidatos, seed-temp 0.05, damping 0.3, 2 saltos, 5 vecinos, 60 llamadas). Filtro de suficiencia: 5 pasajes; umbral elegido en dev por exactitud balanceada: opción 1 → 0.38, opción 2 → 0.66, opción 3 → 0.29, opción 5 → 0.52.
+
+---
+
+## 21. Resultados en test — MuSiQue (3 de octubre de 2026)
+
+*218 preguntas (116 con respuesta, 102 sin respuesta); una corrida por opción con la configuración de la sección 20.*
+
+| Opción | R@5 | R@10 | Cadena completa@10 | MRR | Abstención | JEV US$ |
+|---|---|---|---|---|---|---|
+| 1 vector | **0.759** | 0.823 | 0.612 | 0.930 | **0.693** | 0.02 (filtro) |
+| 2 vector + JEV | 0.628 | 0.694 | 0.422 | 0.764 | 0.619 | 0.22 |
+| 3 grafo inferido + PPR | 0.754 | **0.831** | **0.621** | **0.932** | 0.688 | 0.02 (filtro) |
+| 5 grafo + JEV navegando | 0.678 | 0.750 | 0.526 | 0.828 | 0.651 | 0.48 |
+
+**H3 — se apoya.** R@10 opción 2 − 1 = −0.129 (IC95 −0.174..−0.084; 6 mejor, 40 peor). Juzgar cada párrafo aislado descarta evidencia puente.
+**H4 — se apoya.** Cadena completa@10 opción 5 − 2 = +0.103 (IC95 +0.034..+0.172; 15 mejor, 3 peor). Por pasos: 2 → +0.143, 3 → +0.032, 4 → +0.067.
+**Pero** ninguna opción con JEV supera a la búsqueda sin juez: opción 5 − 1 en cadena completa@10 = −0.086 (IC95 −0.164..−0.009).
+**H5 — no se cumple.** Abstención 0.62–0.69, lejos de 0.85. El filtro de suficiencia separa (AUC 0.75–0.80) pero no lo bastante.
+
+**Lectura:** en una memoria sin citas, el juez tal como está diseñado (descartar lo que juzga irrelevante, pregunta por pregunta completa) hace daño; dar contexto de la cadena reduce ese daño sin eliminarlo. El grafo inferido sin juez empata con la búsqueda vectorial. Mejoras candidatas, a evaluar solo en dev: que el juez reordene sin descartar, que juzgue contra sub-preguntas (descomposición) en lugar de la pregunta completa, y un filtro de suficiencia con más pasajes.
