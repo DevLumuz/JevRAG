@@ -239,6 +239,9 @@ func RunItems(ctx context.Context, client jev.Client, model string, items []Item
 		wg    sync.WaitGroup
 	)
 	sem := make(chan struct{}, max(concurrency, 1))
+	// Identical items in one batch are asked once; the copies take the answer.
+	firstOf := map[string]int{}
+	dup := map[int]int{}
 	for i, it := range items {
 		key := CacheKey(model, it.State, it.Questions)
 		if r, ok := cache.get(key); ok {
@@ -246,6 +249,11 @@ func RunItems(ctx context.Context, client jev.Client, model string, items []Item
 			usage.CacheHits++
 			continue
 		}
+		if j, ok := firstOf[key]; ok {
+			dup[i] = j
+			continue
+		}
+		firstOf[key] = i
 		mu.Lock()
 		over := maxInputTokens > 0 && usage.InputTokens >= maxInputTokens
 		stop := first != nil
@@ -278,6 +286,10 @@ func RunItems(ctx context.Context, client jev.Client, model string, items []Item
 	wg.Wait()
 	if first != nil {
 		return nil, usage, first
+	}
+	for i, j := range dup {
+		out[i] = out[j]
+		usage.CacheHits++
 	}
 	for i, r := range out {
 		if r == nil {

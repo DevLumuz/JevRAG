@@ -104,3 +104,24 @@ func TestStateFor_Truncates(t *testing.T) {
 		t.Errorf("len = %d", n)
 	}
 }
+
+func TestRunItemsAsksDuplicatesOnce(t *testing.T) {
+	calls := 0
+	client := &jev.FakeClient{Respond: func(state any, qs map[string]jev.Question) (*jev.Response, error) {
+		calls++
+		return &jev.Response{Answers: map[string]jev.Answer{"q": {Type: "noul", Noul: 0.7}}}, nil
+	}}
+	cache, err := probe.OpenCache(filepath.Join(t.TempDir(), "c.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	qs := map[string]jev.Question{"q": jev.Noul("x?")}
+	items := []probe.Item{{State: "a", Questions: qs}, {State: "a", Questions: qs}, {State: "b", Questions: qs}}
+	out, _, err := probe.RunItems(context.Background(), client, "m", items, cache, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || out[1] == nil || out[1].Answers["q"].Noul != 0.7 {
+		t.Errorf("calls = %d, out[1] = %v; want 2 calls and a copied answer", calls, out[1])
+	}
+}

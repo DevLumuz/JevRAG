@@ -39,3 +39,16 @@ func TestSilverSentence(t *testing.T) {
 		t.Errorf("got %v, want none", k)
 	}
 }
+
+func TestSplitSentencesSpanish(t *testing.T) {
+	got := notebook.SplitSentences(`Conforme al art. 47, fracc. III, el patrón puede rescindir. ¿Aplica al Lic. Pérez? Ver pág. 12 del anexo. «Fin».`)
+	want := []string{
+		"Conforme al art. 47, fracc. III, el patrón puede rescindir.",
+		"¿Aplica al Lic. Pérez?",
+		"Ver pág. 12 del anexo.",
+		"«Fin».",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}

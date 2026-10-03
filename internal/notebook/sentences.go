@@ -16,6 +16,9 @@ var abbreviations = map[string]bool{
 	"e.g": true, "i.e": true, "etc": true, "u.s": true, "u.k": true, "mt": true, "ft": true,
 	"gen": true, "col": true, "lt": true, "sgt": true, "capt": true, "gov": true, "sen": true,
 	"rep": true, "rev": true, "prof": true, "fig": true, "vol": true, "approx": true,
+	// Spanish
+	"núm": true, "fracc": true, "lic": true, "sra": true, "dra": true, "pág": true, "ing": true,
+	"cía": true, "depto": true, "av": true, "fr": true, "párr": true,
 }
 
 // SplitSentences splits text into sentences. A sentence ends at '.', '!' or
@@ -53,7 +56,7 @@ func SplitSentences(text string) []string {
 		if next >= len(rs) {
 			continue
 		}
-		if n := rs[next]; !unicode.IsUpper(n) && !unicode.IsDigit(n) && !strings.ContainsRune(`"'“‘(`, n) {
+		if n := rs[next]; !unicode.IsUpper(n) && !unicode.IsDigit(n) && !strings.ContainsRune(`"'“‘(¿¡«`, n) {
 			continue
 		}
 		if r == '.' && isAbbreviation(rs[start:i]) {
