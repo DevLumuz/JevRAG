@@ -67,7 +67,7 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		}},
 	}
 
-	if cfg.exVariants == "phase1" {
+	if cfg.exVariants == "phase1" || cfg.exVariants == "phase1final" {
 		rr, err := rerank.Open(cfg.rerankURL, cfg.rerankModel, filepath.Join("data", "rerank", "cache.jsonl"))
 		if err != nil {
 			return err
@@ -98,6 +98,15 @@ func runExplore(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			{"notebook loop · reranker scores, JEV picks sentences", explore(with("rerank", "jev"))},
 			{"notebook loop · JEV & reranker mean scores, JEV picks sentences", explore(with("mix", "jev"))},
 			{"notebook loop + JEV", explore(loop)},
+		}
+		if cfg.exVariants == "phase1final" { // plan §27: the reranker rows that matter, within budget
+			variants = []exploreVariant{
+				{"vector, question only (option 1)", vecOnly},
+				{"single pass + reranker scores 30", single(30, "rerank")},
+				{"single pass + JEV & reranker mean, 30", single(30, "mix")},
+				{"single pass + JEV scores 30", single(30, "jev")},
+				{"notebook loop + JEV", explore(loop)},
+			}
 		}
 	}
 
