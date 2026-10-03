@@ -625,3 +625,27 @@ primera frase 0.68 · solapamiento de palabras 0.60–0.66 · **JEV choice 0.89*
 **Puerta P1 — se cumple:** el oráculo sube la AUC de intermedios +0.115 (≥ 0.10; el límite inferior del IC es +0.05) y los hechos equivocados la bajan −0.034 (≤ 0.05). Con hechos escogidos por el propio JEV se conserva ~75% de la ganancia.
 
 **Lectura:** el cuaderno ataca justo la falla de §21: (1) hace que la búsqueda alcance los puentes intermedios, (2) JEV escoge bien la frase clave (muy por encima de heurísticas) y (3) con esa frase en el estado JEV ordena mejor que sin ella y que el propio orden de búsqueda. Sin cuaderno, JEV queda por debajo del orden de búsqueda (0.786 vs 0.817), coherente con §21. Falta: la frontera (entidad) aquí es la respuesta oro; en el bucle real sale de la frase escogida (JEV no escribe), así que la búsqueda de la ronda 2 debe usar la frase completa (vector) + BM25 de la frase. Siguiente: Fase 2 en pequeño (bucle real de 2–3 rondas vs. una pasada con el mismo presupuesto) en un dev nuevo, y reordenador estándar (Fase 1) en cuanto se habilite huggingface.co.
+
+---
+
+## 24. Fase 2 — bucle con cuaderno: resultados en dev y pre-registro (3 de octubre de 2026)
+
+*Escrito después de dev y antes de construir la memoria nueva.*
+
+**Dev (34 preguntas con respuesta de la memoria MuSiQue de §20; `results/20261003-050717-musique-explore-dev.md`):**
+
+| sistema | R@10 | cadena@10 | encontrado (cualquier posición) | llamadas JEV / pregunta |
+|---|---|---|---|---|
+| vector con la pregunta (opción 1) | 0.819 | 0.588 | 0.706 | 0 |
+| bucle con cuaderno sin JEV (reglas de palabras) | 0.777 | 0.500 | 0.794 | 0 |
+| una pasada + JEV califica 30 | 0.806 | 0.559 | 0.706 | 30 |
+| una pasada + JEV califica 60 (mismo presupuesto) | 0.794 | 0.559 | 0.853 | 60 |
+| **bucle con cuaderno + JEV** | **0.926** | **0.794** | **0.882** | 66 |
+
+Diferencia pareada en cadena@10, bucle + JEV − una pasada con mismo presupuesto: **+0.235 (IC95 +0.088..+0.382)**; − opción 1: +0.206; − bucle sin JEV: +0.294. Por pasos: 3 saltos 0.80 vs 0.40–0.53.
+
+Ajuste hecho en dev (en 10 preguntas): la ronda 1 busca solo por vector (la mezcla con palabras clave sobre la pregunta larga hundía la búsqueda); las rondas siguientes mezclan vector (pregunta + cuaderno) con palabras clave sobre los hechos nuevos.
+
+**Pre-registro H6.** En una memoria nueva (MuSiQue train, 20 páginas de 100 filas repartidas, 150 preguntas con respuesta + 150 sin respuesta por hash, misma regla anti-fuga de §20; nunca usada para ajustar), sobre todas las preguntas con respuesta: cadena@10 del bucle + JEV − una pasada + JEV con 60 pasajes ≥ +0.05 y el IC95 pareado (remuestreo por pregunta) excluye 0. Secundarias, sin corrección: contra opción 1 y contra el bucle sin JEV; por número de saltos.
+
+**Configuración congelada:** `--rounds 3 --per-round 10 --read-top 3 --fact-threshold 0.5`, ≤ 2 hechos por pasaje, cuaderno ≤ 8 hechos, `--control-n 60`, JEV `jev-1.13.0`, preguntas JEV de `internal/notebook/judge.go` (las de P1), embeddings gemini-embedding-001 3072. Una sola corrida: `--dataset musique --musique-split train --mode all --explore`.
