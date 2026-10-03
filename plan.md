@@ -651,3 +651,21 @@ Ajuste hecho en dev (en 10 preguntas): la ronda 1 busca solo por vector (la mezc
 **Configuración congelada:** `--rounds 3 --per-round 10 --read-top 3 --fact-threshold 0.5`, ≤ 2 hechos por pasaje, cuaderno ≤ 8 hechos, `--control-n 60`, JEV `jev-1.13.0`, preguntas JEV de `internal/notebook/judge.go` (las de P1), embeddings gemini-embedding-001 3072. Una sola corrida: `--dataset musique --musique-split train --mode all --explore`.
 
 **Desviación registrada antes de correr:** la muestra de train dio una memoria de 3,402 párrafos con 150 preguntas con respuesta y solo 39 sin respuesta que pasan la regla anti-fuga (en train los párrafos se repiten mucho entre preguntas cercanas). H6 usa solo las 150 con respuesta, así que no cambia; la memoria es más chica que la de §20 (menos distractores).
+
+---
+
+## 25. Resultado H6 — Fase 2 en memoria nueva (3 de octubre de 2026)
+
+*Una sola corrida con la configuración congelada de §24. Memoria nueva de MuSiQue train: 3,402 párrafos, 150 preguntas con respuesta (112 de 2 saltos, 26 de 3, 12 de 4). `results/20261003-052414-musique-train-explore-all.md`. Costo: Gemini ~US$0.065, JEV ~US$0.57 (las tres variantes con JEV).*
+
+| sistema | R@10 | cadena@5 | cadena@10 | llamadas JEV / pregunta |
+|---|---|---|---|---|
+| vector con la pregunta (opción 1) | 0.876 | 0.640 | 0.727 | 0 |
+| bucle con cuaderno sin JEV | 0.826 | 0.567 | 0.673 | 0 |
+| una pasada + JEV califica 30 | 0.890 | 0.633 | 0.767 | 30 |
+| una pasada + JEV califica 60 (mismo presupuesto) | 0.883 | 0.620 | 0.753 | 60 |
+| **bucle con cuaderno + JEV** | **0.926** | **0.700** | **0.827** | 66 |
+
+**H6 — se cumple.** Cadena@10, bucle + JEV − una pasada con 60: **+0.073 (IC95 +0.033..+0.120)**: ≥ +0.05 y el IC excluye 0. Secundarias: − opción 1 +0.100 (+0.047..+0.160); − bucle sin JEV +0.153 (+0.087..+0.227); − una pasada con 30 +0.060 (+0.020..+0.107). Por saltos (cadena@10): 2 → 0.95 vs 0.88; 3 → 0.46 vs 0.38; 4 → 0.50 vs 0.33.
+
+**Lectura:** la ganancia se sostiene en preguntas nuevas, más chica que en dev (+0.235 en 34 preguntas; esperable por el tamaño de dev y porque aquí 75% son de 2 saltos). El cuaderno sin JEV empeora a la búsqueda simple: lo que hace funcionar el bucle es que JEV escoja las frases y juzgue con ellas. JEV que reordena sin descartar (una pasada) ya no daña (+0.03–0.04 sobre opción 1), a diferencia de la opción 2 que descartaba. Pendientes: reordenador estándar (Fase 1), abstención por cobertura (Fase 3), y dominios de empresa / español (Fase 4).
