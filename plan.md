@@ -490,3 +490,19 @@ Medido sobre el split de test, con umbrales ya congelados en dev.
 
 **Diseño fijado de la opción 5 (antes de verla correr):** mismo grafo y mismo Personalized PageRank que la opción 3; el juez (1) califica las semillas, que pesan en el reinicio del PPR como similitud × multiplicador, y (2) califica conexiones desde los artículos aceptados hacia sus vecinos, con contexto de origen y de lo confirmado, hasta 2 saltos y un tope de llamadas por pregunta; cada conexión juzgada pesa Weight × multiplicador (CatRAG). Las conexiones no juzgadas conservan su peso. La opción 3 es el mismo código sin juez.
 
+
+---
+
+## 18. Configuración congelada para test (3 de octubre de 2026)
+
+*Fijada en dev y commiteada **antes** de la primera corrida sobre el split de test. Es la configuración por defecto de `cmd/harness` en este commit.*
+
+| Parámetro | Valor | Origen |
+|---|---|---|
+| Embeddings | gemini-embedding-001, 3,072 dims, receta legal-v1, preguntas RETRIEVAL_QUERY con contexto + pregunta | sección 2 de la corrida de embeddings |
+| K reportado | 1, 5, 10 | plan |
+| Opción 2 | 30 candidatos, umbrales del juez 0.5 | sin ajustar |
+| Opciones 3 y 5 | 30 semillas, `seed-temp` 0.05, damping 0.3, peso de conexión = coseno entre artículos | ajustado en dev con la opción 3 (sin juez) |
+| Opción 5 | 2 saltos, 5 vecinos por nodo aceptado, máx. 60 llamadas por pregunta, conexiones no juzgadas ×1 | dev: 30 semillas igualan a la opción 2; la variante ×0.25 no mejoró |
+
+Corridas en test, una vez cada una: opciones 1, 2, 3 y 5. El análisis sigue la regla de la sección 17 sin cambios.

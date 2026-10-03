@@ -83,7 +83,7 @@ func parseFlags() config {
 	flag.IntVar(&c.limit, "limit", 0, "run only the first N questions of the split (0 = all)")
 	flag.Float64Var(&c.minScore, "min-score", 0, "option 1: abstain if the best similarity is below this")
 	flag.IntVar(&c.concurrency, "concurrency", 8, "parallel judge calls per question")
-	flag.IntVar(&c.seeds, "seeds", 20, "options 3-5: entry points by similarity before graph traversal")
+	flag.IntVar(&c.seeds, "seeds", 30, "options 3-5: entry points by similarity before graph traversal (30 = option 2 candidates, frozen on dev)")
 	flag.IntVar(&c.neighbors, "neighbors", 5, "option 5: connections judged per accepted node")
 	flag.IntVar(&c.hops, "hops", 2, "option 5: how many steps the judge navigates from the seeds")
 	flag.IntVar(&c.maxCalls, "max-judge-calls", 60, "option 5: judge calls per question (seeds + connections)")
