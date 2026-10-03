@@ -1,0 +1,21 @@
+{
+  "name": "passage-v1",
+  "description": "Baseline: the questions the harness used in v1 (one 4-tier relevance choice + a sufficiency noul), on the agnostic state. Kept to compare every new set against.",
+  "state": "{query, passage: {title, text}}",
+  "questions": {
+    "relevance": {
+      "type": "choice",
+      "instructions": "How relevant is the `passage` for answering `query`? Judge the passage's content.",
+      "criteria": {
+        "irrelevant": "The passage adds nothing to answering the query.",
+        "weak": "The passage is related to the topic but only tangential to this query.",
+        "high": "The passage is a necessary step in the reasoning chain toward the answer.",
+        "direct": "The passage itself states or contains the answer to the query."
+      }
+    },
+    "sufficient": {
+      "type": "noul",
+      "instructions": "The `passage` alone is enough to fully answer `query` without looking for more information."
+    }
+  }
+}

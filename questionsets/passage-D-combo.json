@@ -1,0 +1,55 @@
+{
+  "name": "passage-D-combo",
+  "description": "Best-of round 1 in one request: step-framed bridge noul (B) + graded contribution score and role choice (C).",
+  "state": "{query, passage: {title, text}}",
+  "questions": {
+    "supports_a_step": {
+      "type": "noul",
+      "instructions": {
+        "question": "Does `passage.text` state a fact needed for at least one step of answering `query`?",
+        "focus": "`query` may need several steps, where the answer to one step identifies the item for the next. A fact that answers an intermediate step counts, even if the passage never mentions the final answer.",
+        "examples_of_steps": [
+          "'Who approves expenses for the team that maintains the billing service?' -> step 1: which team maintains the billing service; step 2: who approves that team's expenses",
+          "'What is the notice period in the contract with the supplier of part 77?' -> step 1: who supplies part 77; step 2: the notice period in that supplier's contract"
+        ]
+      },
+      "criteria": {
+        "true": "States the answer to the whole query or to one of its steps.",
+        "false": "Is on the same topic but answers no step, or mentions an item from `query` without stating anything that resolves a step."
+      }
+    },
+    "contribution": {
+      "type": "score",
+      "instructions": "How much of what `query` asks for does `passage.text` supply?",
+      "criteria": [
+        "Nothing related to `query`.",
+        "Same general topic, but no fact about any item or attribute in `query`.",
+        "A fact about an item named in `query` that does not resolve any part of the question.",
+        "A fact that resolves part of `query`, such as identifying an item that `query` describes indirectly.",
+        "The specific information `query` asks for."
+      ]
+    },
+    "role": {
+      "type": "choice",
+      "instructions": "What role could `passage` play in answering `query`?",
+      "criteria": {
+        "final_answer": {
+          "what": "States the information `query` asks for.",
+          "not_for": "Facts that only identify an item along the way."
+        },
+        "linking_fact": {
+          "what": "States a fact that identifies or connects an item `query` refers to (who owns, contains, made, or manages it).",
+          "not_for": "The asked-for information itself."
+        },
+        "background": {
+          "what": "About an item in `query` but resolves nothing.",
+          "not_for": "Linking facts."
+        },
+        "off_target": {
+          "what": "Not about any item or asked-for information in `query`, or about a different item with a similar name.",
+          "not_for": "Passages that mention a query item."
+        }
+      }
+    }
+  }
+}

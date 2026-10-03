@@ -24,13 +24,48 @@ type MuSiQueParagraph struct {
 	IsSupporting bool   `json:"is_supporting"`
 }
 
+// MuSiQueStep is one step of a question's decomposition. ParagraphIdx points
+// at the supporting paragraph for that step (nil for unanswerable rows).
+type MuSiQueStep struct {
+	Question     string `json:"question"`
+	Answer       string `json:"answer"`
+	ParagraphIdx *int   `json:"paragraph_support_idx"`
+}
+
 // MuSiQueRow is one question.
 type MuSiQueRow struct {
-	ID         string             `json:"id"`
-	Question   string             `json:"question"`
-	Answer     string             `json:"answer"`
-	Answerable bool               `json:"answerable"`
-	Paragraphs []MuSiQueParagraph `json:"paragraphs"`
+	ID            string             `json:"id"`
+	Question      string             `json:"question"`
+	Answer        string             `json:"answer"`
+	Answerable    bool               `json:"answerable"`
+	Paragraphs    []MuSiQueParagraph `json:"paragraphs"`
+	Decomposition []MuSiQueStep      `json:"question_decomposition"`
+}
+
+// SupportRoles maps each supporting paragraph's key to its role in the
+// reasoning chain: "final" for the paragraph of the last step (it states the
+// answer) and "bridge" for earlier steps (intermediate facts).
+func (r *MuSiQueRow) SupportRoles() map[string]string {
+	byIdx := map[int]MuSiQueParagraph{}
+	for _, p := range r.Paragraphs {
+		byIdx[p.Idx] = p
+	}
+	roles := map[string]string{}
+	for i, s := range r.Decomposition {
+		if s.ParagraphIdx == nil {
+			continue
+		}
+		p, ok := byIdx[*s.ParagraphIdx]
+		if !ok {
+			continue
+		}
+		role := "bridge"
+		if i == len(r.Decomposition)-1 {
+			role = "final"
+		}
+		roles[ParagraphKey(p)] = role
+	}
+	return roles
 }
 
 // Hops returns the number of reasoning steps encoded in the ID prefix

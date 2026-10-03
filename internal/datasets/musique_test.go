@@ -41,3 +41,20 @@ func TestParseMuSiQueRow_AnswerableWithoutSupportFails(t *testing.T) {
 		t.Error("expected error")
 	}
 }
+
+func TestSupportRoles(t *testing.T) {
+	raw := musiqueRaw("2hop__1_2", true, true)
+	raw["paragraphs"] = append(raw["paragraphs"].([]any), map[string]any{"idx": float64(2), "title": "Walt Disney", "paragraph_text": "Founder.", "is_supporting": true})
+	raw["question_decomposition"] = []any{
+		map[string]any{"question": "Who created Mickey?", "answer": "Walt Disney", "paragraph_support_idx": float64(0)},
+		map[string]any{"question": "Who founded #1?", "answer": "x", "paragraph_support_idx": float64(2)},
+	}
+	r, err := datasets.ParseMuSiQueRow(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles := r.SupportRoles()
+	if roles["Mickey Mouse | Mickey was created by Walt Disney."] != "bridge" || roles["Walt Disney | Founder."] != "final" {
+		t.Errorf("roles = %v", roles)
+	}
+}

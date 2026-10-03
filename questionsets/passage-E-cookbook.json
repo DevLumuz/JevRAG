@@ -1,0 +1,15 @@
+{
+  "name": "passage-E-cookbook",
+  "description": "Control: the official TypeSafe 'classifying RAG passages' cookbook wording, unchanged.",
+  "state": "{query, passage: {title, text}}",
+  "questions": {
+    "is_relevant": {
+      "type": "noul",
+      "instructions": "Does this passage address the subject of the query?"
+    },
+    "contains_answer_evidence": {
+      "type": "noul",
+      "instructions": "Does this passage state information usable in a direct answer?"
+    }
+  }
+}

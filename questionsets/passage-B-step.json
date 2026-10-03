@@ -1,0 +1,46 @@
+{
+  "name": "passage-B-step",
+  "description": "Step-framed bridge noul (with generic step examples) plus answers_query from set A.",
+  "state": "{query, passage: {title, text}}",
+  "questions": {
+    "supports_a_step": {
+      "type": "noul",
+      "instructions": {
+        "question": "Does `passage.text` state a fact needed for at least one step of answering `query`?",
+        "focus": "`query` may need several steps, where the answer to one step identifies the item for the next. A fact that answers an intermediate step counts, even if the passage never mentions the final answer.",
+        "examples_of_steps": [
+          "'Who approves expenses for the team that maintains the billing service?' -> step 1: which team maintains the billing service; step 2: who approves that team's expenses",
+          "'What is the notice period in the contract with the supplier of part 77?' -> step 1: who supplies part 77; step 2: the notice period in that supplier's contract"
+        ]
+      },
+      "criteria": {
+        "true": "States the answer to the whole query or to one of its steps.",
+        "false": "Is on the same topic but answers no step, or mentions an item from `query` without stating anything that resolves a step."
+      }
+    },
+    "answers_query": {
+      "type": "noul",
+      "instructions": {
+        "question": "Does `passage.text` state the specific information that `query` asks for?",
+        "focus": "Judge what the passage explicitly states, not what it is about. The wording may differ from `query`."
+      },
+      "criteria": {
+        "true": {
+          "what": "The passage states the requested value, fact, rule, condition, or step for the same item `query` asks about.",
+          "examples": [
+            "query: 'How long are backup logs kept?' / passage: 'Backup logs are retained for 90 days.'",
+            "query: 'Which form is used to appeal a denied claim?' / passage: 'Appeals of denied claims are filed on Form B-12.'",
+            "query: 'What year was the Halvard plant opened?' / passage: 'The Halvard plant opened in 1987.'"
+          ]
+        },
+        "false": {
+          "what": "The passage only discusses the topic, states the information for a different item, version, or situation, or tells the reader to look elsewhere.",
+          "examples": [
+            "query: 'How long are backup logs kept?' / passage: 'Backup logs are stored in the archive bucket.'",
+            "query: 'How long are backup logs kept?' / passage: 'Audit logs are retained for 1 year.'"
+          ]
+        }
+      }
+    }
+  }
+}

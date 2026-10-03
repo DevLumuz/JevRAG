@@ -75,6 +75,7 @@ type config struct {
 	gate          bool
 	gateTop       int
 	gateThreshold float64
+	probeBank     bool
 	llmModel      string
 	maxLLM        int64
 }
@@ -89,6 +90,7 @@ func parseFlags() config {
 	flag.BoolVar(&c.gate, "gate", false, "after retrieval, ask JEV whether the top passages suffice; abstain if not (1 call/question)")
 	flag.IntVar(&c.gateTop, "gate-top", 5, "passages shown to the sufficiency gate")
 	flag.Float64Var(&c.gateThreshold, "gate-threshold", 0.5, "abstain when the gate's probability is below this (tune on dev)")
+	flag.BoolVar(&c.probeBank, "build-probe-bank", false, "write labeled (query, passage) pairs from the dev split to data/probe and exit")
 	flag.StringVar(&c.llmModel, "llm-model", "gemini-3.8-flash", "option 4: Gemini model used as judge")
 	flag.Int64Var(&c.maxLLM, "max-llm-tokens", 1_000_000, "option 4: stop after this many LLM input tokens (gemini-3.8-flash ≈ US$0.375 per million)")
 	flag.IntVar(&c.k, "k", 10, "keys returned per question (must be >= the largest reported K)")
@@ -222,6 +224,11 @@ func run(ctx context.Context, cfg config) error {
 	qEmb := make(map[string][]float64, len(bench.Questions))
 	for i, q := range bench.Questions {
 		qEmb[q.ID] = allQVecs[i]
+	}
+
+	if cfg.probeBank {
+		_, err := buildProbeBank(bench, dev, qEmb, filepath.Join("data", "probe"))
+		return err
 	}
 
 	edges := bench.Edges(nodes)

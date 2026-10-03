@@ -1,0 +1,40 @@
+{
+  "name": "passage-C-graded",
+  "description": "Graded contribution (score) and passage role (choice, use probabilities, never argmax).",
+  "state": "{query, passage: {title, text}}",
+  "questions": {
+    "contribution": {
+      "type": "score",
+      "instructions": "How much of what `query` asks for does `passage.text` supply?",
+      "criteria": [
+        "Nothing related to `query`.",
+        "Same general topic, but no fact about any item or attribute in `query`.",
+        "A fact about an item named in `query` that does not resolve any part of the question.",
+        "A fact that resolves part of `query`, such as identifying an item that `query` describes indirectly.",
+        "The specific information `query` asks for."
+      ]
+    },
+    "role": {
+      "type": "choice",
+      "instructions": "What role could `passage` play in answering `query`?",
+      "criteria": {
+        "final_answer": {
+          "what": "States the information `query` asks for.",
+          "not_for": "Facts that only identify an item along the way."
+        },
+        "linking_fact": {
+          "what": "States a fact that identifies or connects an item `query` refers to (who owns, contains, made, or manages it).",
+          "not_for": "The asked-for information itself."
+        },
+        "background": {
+          "what": "About an item in `query` but resolves nothing.",
+          "not_for": "Linking facts."
+        },
+        "off_target": {
+          "what": "Not about any item or asked-for information in `query`, or about a different item with a similar name.",
+          "not_for": "Passages that mention a query item."
+        }
+      }
+    }
+  }
+}

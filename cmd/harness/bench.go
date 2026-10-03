@@ -18,11 +18,12 @@ import (
 // benchQuestion is one evaluation question, independent of the dataset.
 type benchQuestion struct {
 	ID         string
-	Text       string   // what the judge reads
-	EmbedText  string   // what is embedded for retrieval
-	Gold       []string // keys of the evidence that answers it (canonical form)
-	Hops       int      // reasoning steps / evidence pieces needed
-	Answerable bool     // false: the memory does not contain the answer
+	Text       string            // what the judge reads
+	EmbedText  string            // what is embedded for retrieval
+	Gold       []string          // keys of the evidence that answers it (canonical form)
+	GoldRoles  map[string]string // optional role per gold key: "final" or "bridge"
+	Hops       int               // reasoning steps / evidence pieces needed
+	Answerable bool              // false: the memory does not contain the answer
 }
 
 // benchmark is a memory (nodes + how they connect) plus questions about it.
@@ -39,6 +40,9 @@ type benchmark struct {
 	Edges func(nodes []*graphmodel.Node) []graphmodel.Edge
 	// Canon maps a ranked list of node keys to the keys used in Gold.
 	Canon func(keys []string) []string
+	// Source names the document a node comes from (shown to judges as
+	// passage.source): a statute's act/article, a paragraph's title.
+	Source func(*graphmodel.Node) string
 }
 
 func loadBenchmark(ctx context.Context, hf *datasets.Client, cfg config) (*benchmark, error) {
@@ -71,8 +75,9 @@ func loadKoBLEX(ctx context.Context, hf *datasets.Client, cfg config) (*benchmar
 	}
 	return &benchmark{
 		Name: "koblex", Nodes: nodes, Questions: qs, DocText: docText,
-		Edges: func([]*graphmodel.Node) []graphmodel.Edge { return edges },
-		Canon: legal.CanonicalRanking,
+		Edges:  func([]*graphmodel.Node) []graphmodel.Edge { return edges },
+		Canon:  legal.CanonicalRanking,
+		Source: func(n *graphmodel.Node) string { return n.Key },
 	}, nil
 }
 
@@ -171,6 +176,7 @@ func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchma
 			for _, p := range r.Supporting() {
 				q.Gold = append(q.Gold, datasets.ParagraphKey(p))
 			}
+			q.GoldRoles = r.SupportRoles()
 		} else if t := twin[r.ID]; t == nil || allIn(t.Supporting(), corpus) {
 			leaked++
 			continue
@@ -195,7 +201,8 @@ func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchma
 			}
 			return edges
 		},
-		Canon: func(keys []string) []string { return keys },
+		Canon:  func(keys []string) []string { return keys },
+		Source: func(n *graphmodel.Node) string { return n.Properties["title"] },
 	}, nil
 }
 
