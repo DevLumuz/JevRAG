@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"jev/internal/evaluator"
 	"jev/internal/graphmodel"
 	"jev/internal/judge"
 	"jev/internal/notebook"
@@ -57,6 +58,7 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		return err
 	}
 	var rows []abstainRow
+	var outcomes []evaluator.QueryOutcome
 	var paid int64
 	for i, q := range qs {
 		tr, err := ex.Explore(ctx, q.Text, qEmb[q.ID], loop)
@@ -97,6 +99,9 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		r.LoopGate = judge.SufficiencyAnswer(resps[2])
 		r.CovPass = (resps[3].Answers["answer_stated"].Noul + 1 - resps[3].Answers["missing_link"].Noul) / 2
 		rows = append(rows, r)
+		if q.Answerable {
+			outcomes = append(outcomes, evaluator.QueryOutcome{ID: q.ID, Expected: q.Gold, Got: tr.Ranked, Hops: q.Hops})
+		}
 		if (i+1)%20 == 0 {
 			log.Printf("  %d/%d · paid JEV tokens so far %d (~US$%.3f)", i+1, len(qs), paid, float64(paid)/1e6*jevPricePerMTok)
 		}
@@ -123,6 +128,10 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 			frozen = fmt.Sprintf("%.3f", balancedAcc(rows, sg.get, cfg.abstainThreshold))
 		}
 		fmt.Fprintf(&b, "| %s | %.3f [%.3f–%.3f] | %.3f (%.2f) | %s |\n", sg.name, auc, lo, hi, bestAcc, bestT, frozen)
+	}
+	if len(outcomes) > 0 {
+		sm := evaluator.Summarize(outcomes, []int{5, 10})
+		fmt.Fprintf(&b, "\nRetrieval of the notebook loop on the %d answerable questions: R@10 %.3f · chain@5 %.3f · chain@10 %.3f.\n", len(outcomes), sm.RecallAt[10], sm.CompleteAt[5], sm.CompleteAt[10])
 	}
 	fmt.Fprintf(&b, "\nFrozen threshold (--abstain-threshold) = %.2f, applied to the primary signal; it is chosen on dev only.\n", cfg.abstainThreshold)
 	fmt.Print(b.String())
