@@ -90,8 +90,16 @@ func loadKoBLEX(ctx context.Context, hf *datasets.Client, cfg config) (*benchmar
 // from it is truly absent from the shared memory (other questions may carry
 // it, which would make it answerable).
 func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchmark, error) {
-	raw, err := cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "musique-validation.rows.json"),
-		datasets.MuSiQueDataset, datasets.MuSiQueConfig, datasets.MuSiQueSplit)
+	var raw []map[string]any
+	var err error
+	if cfg.musiqueSplit == datasets.MuSiQueSplit {
+		raw, err = cachedRows(ctx, hf, filepath.Join(cfg.cacheDir, "musique-validation.rows.json"),
+			datasets.MuSiQueDataset, datasets.MuSiQueConfig, datasets.MuSiQueSplit)
+	} else {
+		// A fresh memory from another split (train): never seen while tuning.
+		raw, err = sampledRows(ctx, hf, filepath.Join(cfg.cacheDir, fmt.Sprintf("musique-%s-sample%d.rows.json", cfg.musiqueSplit, cfg.musiquePages)),
+			datasets.MuSiQueDataset, datasets.MuSiQueConfig, cfg.musiqueSplit, cfg.musiquePages)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +197,7 @@ func loadMuSiQue(ctx context.Context, hf *datasets.Client, cfg config) (*benchma
 		len(nodes), len(chosen), len(qs)-len(chosen), leaked)
 
 	return &benchmark{
-		Name: "musique", Nodes: nodes, Questions: qs,
+		Name: musiqueName(cfg), Nodes: nodes, Questions: qs,
 		DocText: func(n *graphmodel.Node) string {
 			return truncateRunes(n.Properties["title"]+" — "+n.Content, maxEmbedChars)
 		},
@@ -259,4 +267,12 @@ func splitQuestions(qs []benchQuestion, devFraction float64) (dev, test []benchQ
 		}
 	}
 	return dev, test
+}
+
+// musiqueName tags results of a fresh memory with its split.
+func musiqueName(cfg config) string {
+	if cfg.musiqueSplit == datasets.MuSiQueSplit {
+		return "musique"
+	}
+	return "musique-" + cfg.musiqueSplit
 }

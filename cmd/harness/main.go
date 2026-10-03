@@ -70,22 +70,33 @@ type config struct {
 	queryTask      string
 	queryVariant   string
 
-	musiqueN      int
-	inferEdges    string
-	gate          bool
-	gateTop       int
-	gateThreshold float64
-	probeBank     bool
-	notebookProbe bool
-	llmModel      string
-	maxLLM        int64
+	musiqueN        int
+	inferEdges      string
+	gate            bool
+	gateTop         int
+	gateThreshold   float64
+	probeBank       bool
+	notebookProbe   bool
+	explore         bool
+	musiqueSplit    string
+	musiquePages    int
+	jevModel        string
+	exRounds        int
+	exPerRound      int
+	exReadTop       int
+	exControlN      int
+	exFactThreshold float64
+	llmModel        string
+	maxLLM          int64
 }
 
 func parseFlags() config {
 	var c config
-	flag.StringVar(&c.mode, "mode", "dev", "split to run: dev (tune thresholds) or test (frozen thresholds only)")
+	flag.StringVar(&c.mode, "mode", "dev", "split to run: dev (tune thresholds), test (frozen thresholds only) or all (fresh memory only)")
 	flag.IntVar(&c.option, "option", 1, "retrieval option 1..5 (see plan.md section 6)")
 	flag.StringVar(&c.dataset, "dataset", "koblex", "benchmark: koblex (statutes, explicit citations) or musique (Wikipedia paragraphs, inferred links, unanswerable questions)")
+	flag.StringVar(&c.musiqueSplit, "musique-split", "validation", "musique: split the memory is built from; train = fresh questions never used for tuning")
+	flag.IntVar(&c.musiquePages, "musique-pages", 20, "musique, non-validation splits: pages of 100 rows sampled evenly")
 	flag.IntVar(&c.musiqueN, "musique-n", 150, "musique: answerable and unanswerable questions sampled (each) to build the memory")
 	flag.StringVar(&c.inferEdges, "infer-edges", "both", "musique: inferred connections: mentions, similar or both")
 	flag.BoolVar(&c.gate, "gate", false, "after retrieval, ask JEV whether the top passages suffice; abstain if not (1 call/question)")
@@ -93,6 +104,13 @@ func parseFlags() config {
 	flag.Float64Var(&c.gateThreshold, "gate-threshold", 0.5, "abstain when the gate's probability is below this (tune on dev)")
 	flag.BoolVar(&c.probeBank, "build-probe-bank", false, "write labeled (query, passage) pairs from the dev split to data/probe and exit")
 	flag.BoolVar(&c.notebookProbe, "notebook-probe", false, "musique: plan v2 P1 — measure reach with notebook facts (T1) and write the T2/T3 probe inputs to data/probe, then exit (embeds a few hundred new query texts: needs --confirm-embed)")
+	flag.BoolVar(&c.explore, "explore", false, "plan v2 Phase 2: notebook loop vs. single-pass controls on the answerable questions of --mode, then exit")
+	flag.StringVar(&c.jevModel, "jev-model", "jev-1.13.0", "--explore: JEV model (pinned; responses cached in data/probe/cache.jsonl)")
+	flag.IntVar(&c.exRounds, "rounds", 3, "--explore: search rounds of the notebook loop")
+	flag.IntVar(&c.exPerRound, "per-round", 10, "--explore: new passages judged per round")
+	flag.IntVar(&c.exReadTop, "read-top", 3, "--explore: best passages per round whose sentences JEV reads")
+	flag.IntVar(&c.exControlN, "control-n", 60, "--explore: passages the equal-budget single pass sends to JEV")
+	flag.Float64Var(&c.exFactThreshold, "fact-threshold", 0.5, "--explore: P(needed fact) to put a sentence in the notebook")
 	flag.StringVar(&c.llmModel, "llm-model", "gemini-3.8-flash", "option 4: Gemini model used as judge")
 	flag.Int64Var(&c.maxLLM, "max-llm-tokens", 1_000_000, "option 4: stop after this many LLM input tokens (gemini-3.8-flash ≈ US$0.375 per million)")
 	flag.IntVar(&c.k, "k", 10, "keys returned per question (must be >= the largest reported K)")
@@ -136,8 +154,8 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config) error {
-	if cfg.mode != "dev" && cfg.mode != "test" {
-		return fmt.Errorf("--mode must be dev or test, got %q", cfg.mode)
+	if cfg.mode != "dev" && cfg.mode != "test" && cfg.mode != "all" {
+		return fmt.Errorf("--mode must be dev, test or all, got %q", cfg.mode)
 	}
 	if err := loadDotEnv(cfg.envFile); err != nil {
 		return fmt.Errorf("reading %s: %w", cfg.envFile, err)
@@ -173,8 +191,11 @@ func run(ctx context.Context, cfg config) error {
 	nodes := bench.Nodes
 	dev, test := splitQuestions(bench.Questions, cfg.devFraction)
 	qs := dev
-	if cfg.mode == "test" {
+	switch cfg.mode {
+	case "test":
 		qs = test
+	case "all": // only for a fresh memory never used for tuning
+		qs = bench.Questions
 	}
 	if cfg.limit > 0 && cfg.limit < len(qs) {
 		qs = qs[:cfg.limit]
@@ -234,6 +255,9 @@ func run(ctx context.Context, cfg config) error {
 	}
 	if cfg.notebookProbe {
 		return runNotebookProbe(ctx, cfg, bench, qEmb, querySpace)
+	}
+	if cfg.explore {
+		return runExplore(ctx, cfg, bench, qs, qEmb, querySpace)
 	}
 
 	edges := bench.Edges(nodes)

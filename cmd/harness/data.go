@@ -180,3 +180,29 @@ func writeJSON(path string, v any) error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// sampledRows downloads `pages` pages of 100 rows spread evenly over a split
+// (big splits need not be downloaded whole) and caches them in one file.
+func sampledRows(ctx context.Context, hf *datasets.Client, cacheFile, dataset, config, split string, pages int) ([]map[string]any, error) {
+	var rows []map[string]any
+	if ok, err := readJSON(cacheFile, &rows); ok || err != nil {
+		return rows, err
+	}
+	first, err := hf.Rows(ctx, dataset, config, split, 0, 1)
+	if err != nil {
+		return nil, err
+	}
+	total := first.NumRowsTotal
+	log.Printf("sampling %d pages of %s (%s/%s, %d rows)...", pages, dataset, config, split, total)
+	for i := 0; i < pages; i++ {
+		offset := (total / pages * i) / 100 * 100
+		p, err := hf.Rows(ctx, dataset, config, split, offset, 100)
+		if err != nil {
+			return nil, fmt.Errorf("offset %d: %w", offset, err)
+		}
+		for _, rw := range p.Rows {
+			rows = append(rows, rw.Row)
+		}
+	}
+	return rows, writeJSON(cacheFile, rows)
+}

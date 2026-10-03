@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evolución de JevRAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una sola columna de lectura; cada etapa es un paso numerado de una línea de tiempo
+   (número a la izquierda en escritorio, arriba en teléfono), con diagrama, cifras y "por qué". */
+:root {
+  --bg: #F2F5F6;
+  --surface: #FFFFFF;
+  --fg: #16212A;
+  --muted: #56646F;
+  --line: #D2DADF;
+  --line-strong: #8C9AA5;
+  --bar: #AAB6BF;
+  --accent: #0C6B70;       /* cuaderno de evidencia / v2 */
+  --accent-soft: #DCEEEE;
+  --jev: #6A40B4;          /* JEV */
+  --jev-soft: #EEE7F8;
+  --good: #2A7A4A;
+  --good-soft: #E0F0E6;
+  --bad: #B03A28;
+  --bad-soft: #F8E2DD;
+  --font-display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+    --line: #2B3843; --line-strong: #63727E; --bar: #4E5C67;
+    --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+    --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+  --line: #2B3843; --line-strong: #63727E; --bar: #4E5C67;
+  --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+  --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.6;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 2.9rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.35rem, 3.6vw, 1.7rem); font-weight: 700; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; max-width: 66ch; }
+.eyebrow {
+  font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.lede { font-size: 1.1rem; color: var(--muted); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.jev { color: var(--jev); font-weight: 700; }
+
+header.top { display: grid; gap: 14px; margin-bottom: 28px; }
+
+.oneline {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 20px 22px; display: grid; gap: 8px; margin-bottom: 18px;
+}
+.oneline p { font-size: 1.18rem; line-height: 1.5; max-width: none; }
+
+.context { display: grid; gap: 10px; margin-bottom: 18px; }
+
+.gloss {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px 22px; margin: 6px 0 36px; padding: 0; list-style: none;
+}
+.gloss li { font-size: 0.93rem; color: var(--muted); min-width: 0; }
+.gloss b { color: var(--fg); }
+
+nav.toc { margin-bottom: 40px; }
+nav.toc ol {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+nav.toc a {
+  display: inline-block; text-decoration: none; color: var(--fg);
+  border: 1px solid var(--line); background: var(--surface);
+  border-radius: 999px; padding: 4px 12px; font-size: 0.88rem;
+}
+nav.toc a span { font-family: var(--font-mono); color: var(--muted); margin-right: 6px; }
+
+.stage {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 20px;
+  padding-block: 34px; border-top: 1px solid var(--line);
+}
+.stage-no {
+  font-family: var(--font-mono); font-size: 1.6rem; font-weight: 600; color: var(--muted);
+  line-height: 1; padding-top: 4px;
+}
+.stage.v2 .stage-no { color: var(--accent); }
+.stage-body { display: grid; gap: 16px; min-width: 0; }
+.stage-head { display: grid; gap: 6px; }
+.take {
+  font-family: var(--font-display); font-weight: 500; font-size: 1.08rem;
+  border-left: 3px solid var(--line-strong); padding: 2px 0 2px 12px; max-width: 66ch;
+}
+.stage.v2 .take { border-left-color: var(--accent); }
+
+figure { margin: 0; }
+.diagram {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px; overflow-x: auto;
+}
+.diagram svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 8px; max-width: 66ch; }
+
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.chart-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 14px 10px; min-width: 0; display: grid; gap: 8px; align-content: start;
+}
+.chart-card h3 { font-size: 0.98rem; }
+.chart-card .sub { font-size: 0.84rem; color: var(--muted); }
+svg.chart { width: 100%; max-width: 460px; height: auto; display: block; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.fact {
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  background: var(--surface); display: grid; gap: 2px; min-width: 0;
+}
+.fact .big { font-family: var(--font-mono); font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact .big.up { color: var(--good); }
+.fact .big.down { color: var(--bad); }
+.fact .lbl { font-size: 0.88rem; color: var(--muted); }
+
+.why {
+  background: var(--surface); border-radius: 10px; padding: 14px 16px;
+  border: 1px dashed var(--line-strong); display: grid; gap: 6px;
+}
+.why h3 { font-size: 0.95rem; color: var(--muted); font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+
+ul.plain { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; max-width: 66ch; }
+
+.fix-list { display: grid; gap: 10px; }
+.fix {
+  display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px;
+  padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+}
+.fix .tag { font-family: var(--font-mono); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 3px; }
+.fix p { font-size: 0.97rem; }
+
+.next { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.next-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0;
+}
+.next-card .eyebrow { color: var(--accent); }
+.next-card p { font-size: 0.95rem; }
+.next-card .gate { font-size: 0.85rem; color: var(--muted); }
+
+.caveat {
+  background: var(--bad-soft); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px;
+}
+.caveat h3 { color: var(--bad); }
+
+footer { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
+
+/* SVG: todos los colores vienen de los tokens, así se lee igual en claro y oscuro */
+svg text { font-family: var(--font-body); }
+.d-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+.d-plain { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1.2; }
+.d-jev { fill: var(--jev-soft); stroke: var(--jev); stroke-width: 1.5; }
+.d-acc { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; }
+.d-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.d-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.d-gray { fill: var(--bar); stroke: none; }
+.d-red { fill: var(--bad); stroke: none; }
+.d-t { fill: var(--fg); font-size: 13px; }
+.d-tb { fill: var(--fg); font-size: 13px; font-weight: 700; }
+.d-s { fill: var(--muted); font-size: 11px; }
+.d-sj { fill: var(--jev); font-size: 11px; font-weight: 700; }
+.d-sa { fill: var(--accent); font-size: 11px; font-weight: 700; }
+.d-sb { fill: var(--bad); font-size: 11px; font-weight: 700; }
+.d-sg { fill: var(--good); font-size: 11px; font-weight: 700; }
+.d-edge { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.d-edge-acc { stroke: var(--accent); stroke-width: 2; fill: none; }
+.d-edge-jev { stroke: var(--jev); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.d-edge-bad { stroke: var(--bad); stroke-width: 1.6; fill: none; stroke-dasharray: 4 4; }
+.d-edge-faint { stroke: var(--line-strong); stroke-width: 1.2; fill: none; stroke-dasharray: 3 4; }
+.m-fg { fill: var(--muted); }
+.m-acc { fill: var(--accent); }
+.m-jev { fill: var(--jev); }
+.m-bad { fill: var(--bad); }
+
+/* barras */
+.grid { stroke: var(--line); stroke-width: 1; }
+.tick { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); }
+.blabel { fill: var(--fg); font-size: 13px; }
+.bval { fill: var(--fg); font-size: 12px; font-family: var(--font-mono); font-weight: 600; }
+.bar.b-base { fill: var(--bar); }
+.bar.b-good { fill: var(--good); }
+.bar.b-bad { fill: var(--bad); }
+.bar.b-jev { fill: var(--jev); }
+.bar.b-ref { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1.2; stroke-dasharray: 4 3; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.sw-base { background: var(--bar); }
+.sw-good { background: var(--good); }
+.sw-bad { background: var(--bad); }
+.sw-jev { background: var(--jev); }
+.sw-ref { background: var(--bg); border: 1px dashed var(--line-strong); }
+
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+  .stage { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .stage-no { font-size: 1.2rem; }
+  .fix { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+
+<!-- Puntas de flecha compartidas por todos los diagramas -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-fg" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-jev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-jev" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-bad" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header class="top">
+  <div class="eyebrow">JevRAG · bitácora de arquitectura · 3 de octubre de 2026</div>
+  <h1>Cómo evolucionó la búsqueda de evidencia</h1>
+  <p class="lede">Del buscador simple al explorador con cuaderno: qué se probó, qué salió mal, qué se corrigió y por qué la versión nueva promete más.</p>
+</header>
+
+<section class="oneline" aria-labelledby="idea">
+  <div class="eyebrow" id="idea">La idea en una frase</div>
+  <p>Cuando <span class="jev">JEV</span> juzga cada pasaje por separado, tira justo los pasos intermedios de un razonamiento; si en vez de tirar <strong>anota la frase clave en un cuaderno</strong> y se vuelve a buscar con ella, la búsqueda sí encuentra esos pasos y JEV los reconoce mejor.</p>
+</section>
+
+<section class="context">
+  <p><strong>Qué estamos probando.</strong> Un agente necesita memoria: leyes, procedimientos de la empresa o cualquier otro tema. Ante cada pregunta hay que traerle la evidencia correcta, aunque esté repartida en varios documentos, y decir “no hay evidencia suficiente” cuando falta.</p>
+  <p><strong>Qué es JEV.</strong> Es el juez de TypeSafe: barato y calibrado. Responde preguntas cerradas (sí/no, escoger una opción, un puntaje) sobre un “state” en JSON. <em>Nunca escribe texto.</em> La pregunta del proyecto: ¿mejora JEV la búsqueda de evidencia?</p>
+</section>
+
+<ul class="gloss" aria-label="Palabras que se usan en la página">
+  <li><b>Pasaje:</b> un párrafo o artículo guardado en la memoria.</li>
+  <li><b>Puente:</b> un pasaje intermedio. No contiene la respuesta, pero lleva a ella.</li>
+  <li><b>Recall@K (R@K):</b> qué parte de los pasajes correctos aparece entre los K primeros.</li>
+  <li><b>Cadena completa@10:</b> preguntas donde <em>todos</em> los pasajes necesarios están en el top 10.</li>
+  <li><b>Alcance@30:</b> si el pasaje correcto llega al menos a los 30 candidatos que se revisan.</li>
+  <li><b>AUC:</b> qué tan bien se ordena lo correcto arriba de lo incorrecto. 1 es perfecto; 0.5 es al azar.</li>
+</ul>
+
+<nav class="toc" aria-label="Etapas">
+  <div class="eyebrow">Las siete etapas</div>
+  <ol>
+    <li><a href="#e1"><span>1</span>Búsqueda simple</a></li>
+    <li><a href="#e2"><span>2</span>JEV como filtro</a></li>
+    <li><a href="#e3"><span>3</span>Grafo + PageRank</a></li>
+    <li><a href="#e4"><span>4</span>Auditoría</a></li>
+    <li><a href="#e5"><span>5</span>Plan v2: cuaderno</a></li>
+    <li><a href="#e6"><span>6</span>Resultados P1</a></li>
+    <li><a href="#e7"><span>7</span>Qué sigue</a></li>
+  </ol>
+</nav>
+
+<!-- ============ ETAPA 1 ============ -->
+<section class="stage" id="e1" aria-labelledby="e1h">
+  <div class="stage-no">1</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Opción 1 · el piso de referencia</div>
+      <h2 id="e1h">Búsqueda vectorial simple</h2>
+    </div>
+    <p class="take">Convertir la pregunta en números y traer los K pasajes más parecidos. Barato, rápido y sorprendentemente difícil de superar.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 620 120" role="img" aria-label="La pregunta pasa por embeddings de Gemini, se compara con la memoria y se devuelven los K pasajes más parecidos">
+          <rect class="d-plain" x="10" y="35" width="110" height="50" rx="8"/>
+          <text class="d-tb" x="65" y="65" text-anchor="middle">Pregunta</text>
+          <rect class="d-box" x="170" y="35" width="110" height="50" rx="8"/>
+          <text class="d-tb" x="225" y="57" text-anchor="middle">Embeddings</text>
+          <text class="d-s" x="225" y="73" text-anchor="middle">Gemini</text>
+          <rect class="d-box" x="330" y="35" width="110" height="50" rx="8"/>
+          <text class="d-tb" x="385" y="57" text-anchor="middle">Memoria</text>
+          <text class="d-s" x="385" y="73" text-anchor="middle">miles de pasajes</text>
+          <rect class="d-good" x="490" y="35" width="120" height="50" rx="8"/>
+          <text class="d-tb" x="550" y="57" text-anchor="middle">Top K</text>
+          <text class="d-s" x="550" y="73" text-anchor="middle">al agente</text>
+          <line class="d-edge" x1="120" y1="60" x2="168" y2="60" marker-end="url(#ah)"/>
+          <line class="d-edge" x1="280" y1="60" x2="328" y2="60" marker-end="url(#ah)"/>
+          <line class="d-edge" x1="440" y1="60" x2="488" y2="60" marker-end="url(#ah)"/>
+          <text class="d-s" x="145" y="28" text-anchor="middle">texto</text>
+          <text class="d-s" x="305" y="28" text-anchor="middle">vector</text>
+          <text class="d-s" x="465" y="28" text-anchor="middle">similitud</text>
+        </svg>
+      </div>
+      <figcaption>Sin juez y sin grafo. Cada pasaje de la memoria ya tiene su vector; se devuelven los que más se parecen a la pregunta.</figcaption>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="big num">0.795</span><span class="lbl">R@5 en leyes coreanas (KoBLEX)</span></div>
+      <div class="fact"><span class="big num">0.823</span><span class="lbl">R@10 en MuSiQue (Wikipedia, varios saltos)</span></div>
+      <div class="fact"><span class="big num">0.612</span><span class="lbl">Cadena completa@10 en MuSiQue</span></div>
+    </div>
+    <div class="why">
+      <h3>Por qué importa</h3>
+      <p>Es la vara de medir. Cualquier pieza nueva (JEV, grafo, cuaderno) tiene que ganarle a esto por un margen claro, porque cuesta casi nada.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 2 ============ -->
+<section class="stage" id="e2" aria-labelledby="e2h">
+  <div class="stage-no">2</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Opción 2 · JEV juzga cada pasaje aislado</div>
+      <h2 id="e2h">Vector + JEV como filtro</h2>
+    </div>
+    <p class="take">JEV revisa los 30 candidatos uno por uno y descarta los que juzga irrelevantes. En leyes ayuda; en Wikipedia sin citas, daña.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 640 240" role="img" aria-label="La búsqueda vectorial trae 30 candidatos; JEV juzga cada uno por separado; el pasaje puente parece irrelevante y se descarta">
+          <rect class="d-plain" x="10" y="95" width="100" height="50" rx="8"/>
+          <text class="d-tb" x="60" y="125" text-anchor="middle">Pregunta</text>
+          <rect class="d-box" x="150" y="95" width="120" height="50" rx="8"/>
+          <text class="d-tb" x="210" y="117" text-anchor="middle">Vector</text>
+          <text class="d-s" x="210" y="133" text-anchor="middle">top 30 candidatos</text>
+          <line class="d-edge" x1="110" y1="120" x2="148" y2="120" marker-end="url(#ah)"/>
+          <line class="d-edge" x1="270" y1="120" x2="308" y2="120" marker-end="url(#ah)"/>
+
+          <rect class="d-jev" x="310" y="14" width="160" height="212" rx="10"/>
+          <text class="d-sj" x="390" y="34" text-anchor="middle">JEV juzga uno por uno</text>
+          <text class="d-s" x="390" y="49" text-anchor="middle">solo ve la pregunta y el pasaje</text>
+
+          <rect class="d-box" x="325" y="62" width="130" height="30" rx="6"/>
+          <text class="d-t" x="340" y="82">Pasaje A</text><text class="d-sg" x="440" y="82" text-anchor="end">sí</text>
+          <rect class="d-box" x="325" y="102" width="130" height="30" rx="6"/>
+          <text class="d-t" x="340" y="122">Pasaje B</text><text class="d-sg" x="440" y="122" text-anchor="end">sí</text>
+          <rect class="d-bad" x="325" y="142" width="130" height="30" rx="6"/>
+          <text class="d-t" x="340" y="162">Puente</text><text class="d-sb" x="440" y="162" text-anchor="end">no</text>
+          <line class="d-edge-bad" x1="333" y1="157" x2="400" y2="157"/>
+          <rect class="d-box" x="325" y="182" width="130" height="30" rx="6"/>
+          <text class="d-t" x="340" y="202">Pasaje D</text><text class="d-sb" x="440" y="202" text-anchor="end">no</text>
+
+          <line class="d-edge" x1="470" y1="97" x2="518" y2="97" marker-end="url(#ah)"/>
+          <text class="d-s" x="494" y="88" text-anchor="middle">los “sí”</text>
+          <rect class="d-box" x="520" y="72" width="110" height="50" rx="8"/>
+          <text class="d-tb" x="575" y="94" text-anchor="middle">Top K</text>
+          <text class="d-s" x="575" y="110" text-anchor="middle">al agente</text>
+
+          <line class="d-edge-bad" x1="470" y1="157" x2="518" y2="170" marker-end="url(#ah-bad)"/>
+          <text class="d-sb" x="575" y="166" text-anchor="middle">se pierde</text>
+          <text class="d-sb" x="575" y="181" text-anchor="middle">el paso</text>
+          <text class="d-sb" x="575" y="196" text-anchor="middle">intermedio</text>
+        </svg>
+      </div>
+      <figcaption>Ejemplo de pregunta de varios saltos: “¿en qué país nació el director de la película X?”. El pasaje que dice quién dirigió X no menciona ningún país, así que, visto solo, parece no servir.</figcaption>
+    </figure>
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw-base"></i>sin juez</span>
+      <span><i class="sw-good"></i>mejora</span>
+      <span><i class="sw-bad"></i>empeora</span>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Leyes coreanas (KoBLEX)</h3>
+        <div class="sub">Recall@5 · las leyes se citan entre sí</div>
+        <svg class="chart" viewBox="0 0 400 124" role="img" aria-label="KoBLEX, Recall arroba 5: vector simple 0.795, vector más JEV 0.858">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="102"/>
+<text class="tick" x="0.0" y="116" text-anchor="start">0</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="102"/>
+<text class="tick" x="80.0" y="116" text-anchor="middle">0.25</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="102"/>
+<text class="tick" x="160.0" y="116" text-anchor="middle">0.5</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="102"/>
+<text class="tick" x="240.0" y="116" text-anchor="middle">0.75</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="102"/>
+<text class="tick" x="320.0" y="116" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Opción 1 · solo vector</text>
+<rect class="bar b-base" x="0" y="27" width="254.4" height="16" rx="2"/>
+<text class="bval" x="260.4" y="40">0.795</text>
+<text class="blabel" x="0" y="66">Opción 2 · vector + JEV filtra</text>
+<rect class="bar b-good" x="0" y="73" width="274.6" height="16" rx="2"/>
+<text class="bval" x="280.6" y="86">0.858</text>
+</svg>
+      </div>
+      <div class="chart-card">
+        <h3>Wikipedia multi-salto (MuSiQue)</h3>
+        <div class="sub">Recall@10 · sin citas entre párrafos</div>
+        <svg class="chart" viewBox="0 0 400 124" role="img" aria-label="MuSiQue, Recall arroba 10: vector simple 0.823, vector más JEV 0.694">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="102"/>
+<text class="tick" x="0.0" y="116" text-anchor="start">0</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="102"/>
+<text class="tick" x="80.0" y="116" text-anchor="middle">0.25</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="102"/>
+<text class="tick" x="160.0" y="116" text-anchor="middle">0.5</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="102"/>
+<text class="tick" x="240.0" y="116" text-anchor="middle">0.75</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="102"/>
+<text class="tick" x="320.0" y="116" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Opción 1 · solo vector</text>
+<rect class="bar b-base" x="0" y="27" width="263.4" height="16" rx="2"/>
+<text class="bval" x="269.4" y="40">0.823</text>
+<text class="blabel" x="0" y="66">Opción 2 · vector + JEV filtra</text>
+<rect class="bar b-bad" x="0" y="73" width="222.1" height="16" rx="2"/>
+<text class="bval" x="228.1" y="86">0.694</text>
+</svg>
+      </div>
+    </div>
+    <div class="facts">
+      <div class="fact"><span class="big up num">+0.063</span><span class="lbl">R@5 en KoBLEX (+0.167 en preguntas que necesitan 3 artículos)</span></div>
+      <div class="fact"><span class="big down num">−0.129</span><span class="lbl">R@10 en MuSiQue: 40 preguntas peor, 6 mejor</span></div>
+      <div class="fact"><span class="big num">15 de 47</span><span class="lbl">puentes que el vector sí tenía y JEV descartó (prueba en dev)</span></div>
+    </div>
+    <div class="why">
+      <h3>Por qué</h3>
+      <p>Un filtro que mira cada pasaje aislado solo sabe responder “¿esto contesta la pregunta?”. Los pasos intermedios no la contestan: llevan a la respuesta. Por eso los tira. En leyes no apareció ese daño (las preguntas de 3 artículos incluso mejoraron). En Wikipedia el puente suele hablar de otra cosa, una persona o un lugar, y ahí sí se pierde.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 3 ============ -->
+<section class="stage" id="e3" aria-labelledby="e3h">
+  <div class="stage-no">3</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Opciones 3 y 5 · navegar conexiones</div>
+      <h2 id="e3h">Grafo + PageRank, con JEV navegando</h2>
+    </div>
+    <p class="take">Si los pasajes están conectados, se puede llegar al puente siguiendo conexiones. Recupera parte de lo perdido, pero no le gana al vector simple.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 640 270" role="img" aria-label="El vector elige semillas en el grafo; PageRank reparte puntaje por las conexiones; JEV califica cada conexión según de dónde viene">
+          <rect class="d-plain" x="10" y="110" width="100" height="50" rx="8"/>
+          <text class="d-tb" x="60" y="140" text-anchor="middle">Pregunta</text>
+          <line class="d-edge" x1="110" y1="125" x2="166" y2="86" marker-end="url(#ah)"/>
+          <line class="d-edge" x1="110" y1="145" x2="166" y2="184" marker-end="url(#ah)"/>
+          <text class="d-s" x="128" y="98" text-anchor="middle">vector</text>
+          <text class="d-s" x="128" y="187" text-anchor="middle">vector</text>
+
+          <!-- aristas -->
+          <line class="d-edge" x1="200" y1="82" x2="292" y2="126"/>
+          <line class="d-edge" x1="200" y1="186" x2="292" y2="140"/>
+          <line class="d-edge" x1="200" y1="196" x2="292" y2="228"/>
+          <line class="d-edge-jev" x1="318" y1="126" x2="412" y2="88"/>
+          <line class="d-edge-faint" x1="318" y1="140" x2="412" y2="196"/>
+          <!-- nodos -->
+          <circle class="d-good" cx="186" cy="78" r="17"/>
+          <circle class="d-good" cx="186" cy="190" r="17"/>
+          <circle class="d-box" cx="305" cy="133" r="17"/>
+          <circle class="d-box" cx="425" cy="82" r="17"/>
+          <circle class="d-box" cx="305" cy="232" r="14"/>
+          <circle class="d-box" cx="425" cy="202" r="14"/>
+          <text class="d-s" x="186" y="50" text-anchor="middle">semilla</text>
+          <text class="d-s" x="186" y="224" text-anchor="middle">semilla</text>
+          <text class="d-tb" x="305" y="168" text-anchor="middle">puente</text>
+          <text class="d-tb" x="425" y="54" text-anchor="middle">respuesta</text>
+          <text class="d-s" x="342" y="244">otro pasaje</text>
+          <!-- etiquetas de JEV -->
+          <text class="d-sj" x="360" y="88" text-anchor="middle">JEV: “alta”</text>
+          <text class="d-s" x="340" y="200" text-anchor="middle">JEV: “irrelevante”</text>
+          <text class="d-sj" x="305" y="20" text-anchor="middle">JEV califica conexiones,</text>
+          <text class="d-sj" x="305" y="34" text-anchor="middle">sabiendo de dónde viene</text>
+
+          <line class="d-edge" x1="462" y1="135" x2="508" y2="135" marker-end="url(#ah)"/>
+          <text class="d-s" x="485" y="126" text-anchor="middle">puntaje</text>
+          <rect class="d-box" x="510" y="110" width="120" height="50" rx="8"/>
+          <text class="d-tb" x="570" y="132" text-anchor="middle">Top K</text>
+          <text class="d-s" x="570" y="148" text-anchor="middle">por PageRank</text>
+        </svg>
+      </div>
+      <figcaption>PageRank personalizado reparte puntaje desde las semillas por las conexiones, como alguien que camina por los enlaces y vuelve a empezar desde las semillas. En la opción 5, JEV sube o baja el peso de cada conexión. En leyes las conexiones son citas; en MuSiQue se infieren (menciones de título y vecinos parecidos).</figcaption>
+    </figure>
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw-base"></i>sin juez</span>
+      <span><i class="sw-bad"></i>JEV filtra aislado</span>
+      <span><i class="sw-jev"></i>JEV navegando</span>
+    </div>
+    <div class="chart-card">
+      <h3>MuSiQue · cadena completa en el top 10</h3>
+      <div class="sub">Qué parte de las preguntas tiene todos sus pasajes necesarios entre los 10 primeros (218 preguntas de test)</div>
+      <svg class="chart" viewBox="0 0 400 216" role="img" aria-label="MuSiQue, cadena completa en el top 10: opción 1 0.612, opción 2 0.422, opción 3 0.621, opción 5 0.526">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="194"/>
+<text class="tick" x="0.0" y="208" text-anchor="start">0</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="194"/>
+<text class="tick" x="80.0" y="208" text-anchor="middle">0.25</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="194"/>
+<text class="tick" x="160.0" y="208" text-anchor="middle">0.5</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="194"/>
+<text class="tick" x="240.0" y="208" text-anchor="middle">0.75</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="194"/>
+<text class="tick" x="320.0" y="208" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Opción 1 · solo vector</text>
+<rect class="bar b-base" x="0" y="27" width="195.8" height="16" rx="2"/>
+<text class="bval" x="201.8" y="40">0.612</text>
+<text class="blabel" x="0" y="66">Opción 2 · JEV filtra aislado</text>
+<rect class="bar b-bad" x="0" y="73" width="135.0" height="16" rx="2"/>
+<text class="bval" x="141.0" y="86">0.422</text>
+<text class="blabel" x="0" y="112">Opción 3 · grafo + PageRank</text>
+<rect class="bar b-base" x="0" y="119" width="198.7" height="16" rx="2"/>
+<text class="bval" x="204.7" y="132">0.621</text>
+<text class="blabel" x="0" y="158">Opción 5 · grafo + JEV navegando</text>
+<rect class="bar b-jev" x="0" y="165" width="168.3" height="16" rx="2"/>
+<text class="bval" x="174.3" y="178">0.526</text>
+</svg>
+    </div>
+    <div class="facts">
+      <div class="fact"><span class="big up num">+0.103</span><span class="lbl">cadena completa, opción 5 contra opción 2: navegar recupera puentes</span></div>
+      <div class="fact"><span class="big down num">−0.086</span><span class="lbl">cadena completa, opción 5 contra el vector simple</span></div>
+      <div class="fact"><span class="big num">2.3×</span><span class="lbl">costo de navegar frente a filtrar en KoBLEX, sin ganar (R@5 0.845 vs 0.858)</span></div>
+      <div class="fact"><span class="big num">0.62–0.69</span><span class="lbl">exactitud al abstenerse en MuSiQue; la meta era 0.85</span></div>
+    </div>
+    <div class="why">
+      <h3>Por qué</h3>
+      <p>Dar a JEV el contexto de la cadena (de qué pasaje viene) reduce el daño, pero el diseño seguía siendo “descartar lo que parece irrelevante”. Y el grafo sin juez apenas empata con el vector (0.621 contra 0.612): seguir conexiones no alcanzó para justificar la complejidad.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 4 ============ -->
+<section class="stage" id="e4" aria-labelledby="e4h">
+  <div class="stage-no">4</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Tres revisiones independientes</div>
+      <h2 id="e4h">Auditoría y correcciones</h2>
+    </div>
+    <p class="take">Antes de construir más, se revisó el banco de pruebas. Había errores que confundían los resultados, y el problema real resultó ser otro.</p>
+    <div class="fix-list">
+      <div class="fix"><div class="tag">Bug</div><p>Las opciones de las preguntas de tipo “escoger” llegaban a JEV en <strong>orden alfabético</strong>, porque los mapas de Go no guardan el orden. Ahora van en el orden escrito. Todo resultado anterior con ese tipo de pregunta quedó en duda.</p></div>
+      <div class="fix"><div class="tag">Artefacto</div><p>Una ganancia de 0.81–0.88 en el banco de pruebas venía de cómo estaba armado el banco (marcas solo en los correctos no recuperados y negativos tomados solo de los primeros puestos). Sin ese truco, no había ganancia.</p></div>
+      <div class="fix"><div class="tag">Métrica</div><p>La comparación justa es ordenar los pasajes <em>de una misma pregunta</em> (AUC dentro de la pregunta) contra el orden que ya daba la búsqueda. Medido así, JEV gana claro en leyes y no de forma significativa en MuSiQue.</p></div>
+      <div class="fix"><div class="tag">Abstención</div><p>Contra “lo que la búsqueda trajo”, la abstención llegaba a 0.85. El límite no era el juez: era lo que la búsqueda dejaba afuera.</p></div>
+      <div class="fix"><div class="tag">Falta</div><p>Nunca se había comparado JEV con un reordenador estándar (por ejemplo bge-reranker). Es obligatorio antes de decir que JEV es la pieza clave.</p></div>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 620 130" role="img" aria-label="De 25 puentes intermedios, 9 nunca llegan al top 30 de la búsqueda; los otros 16 llegan pero JEV los separa mal sin contexto">
+          <text class="d-tb" x="10" y="20">25 puentes de paso intermedio</text>
+          <rect class="d-red" x="10" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="34" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="58" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="82" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="106" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="130" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="154" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="178" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-red" x="202" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="226" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="250" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="274" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="298" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="322" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="346" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="370" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="394" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="418" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="442" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="466" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="490" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="514" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="538" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="562" y="36" width="20" height="28" rx="3"/>
+          <rect class="d-gray" x="586" y="36" width="20" height="28" rx="3"/>
+          <line class="d-edge-bad" x1="10" y1="80" x2="222" y2="80"/>
+          <text class="d-sb" x="10" y="100">9 nunca llegan al top 30</text>
+          <text class="d-s" x="10" y="116">ningún juez puede rescatarlos</text>
+          <line class="d-edge-faint" x1="226" y1="80" x2="610" y2="80"/>
+          <text class="d-t" x="226" y="100">16 llegan, pero sin contexto JEV los ordena mal</text>
+          <text class="d-s" x="226" y="116">aislados no se ven relevantes</text>
+        </svg>
+      </div>
+      <figcaption>El fallo de fondo tiene dos partes: la búsqueda no alcanza a los puentes y, cuando los alcanza, el juez no tiene con qué reconocerlos.</figcaption>
+    </figure>
+    <div class="why">
+      <h3>Por qué cambia el rumbo</h3>
+      <p>Mejorar el juez no basta si el pasaje nunca llega a sus manos. Hacía falta algo que cambie <em>qué se busca</em> en el segundo intento y que le dé al juez el contexto de lo ya encontrado.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 5 ============ -->
+<section class="stage v2" id="e5" aria-labelledby="e5h">
+  <div class="stage-no">5</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Plan v2 · aprobado para ejecutar</div>
+      <h2 id="e5h">Explorador por rondas con cuaderno de evidencia</h2>
+    </div>
+    <p class="take">Buscar, anotar lo que se aprendió y volver a buscar con eso. JEV nunca escribe: escoge, califica y decide. Y reordena, nunca descarta.</p>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 640 400" role="img" aria-label="Ciclo: buscar, JEV califica y reordena, JEV escoge frases clave, se guardan en el cuaderno, se revisa si cubre todo; si falta algo se vuelve a buscar con la pregunta más los hechos y palabras clave; si cubre todo se entrega el cuaderno con citas; si no queda qué buscar se abstiene">
+          <!-- Pregunta -->
+          <rect class="d-plain" x="10" y="22" width="110" height="44" rx="8"/>
+          <text class="d-tb" x="65" y="49" text-anchor="middle">Pregunta</text>
+          <line class="d-edge" x1="120" y1="44" x2="168" y2="44" marker-end="url(#ah)"/>
+
+          <!-- 1 Buscar -->
+          <rect class="d-box" x="170" y="20" width="180" height="56" rx="8"/>
+          <text class="d-tb" x="260" y="43" text-anchor="middle">1 · Buscar</text>
+          <text class="d-s" x="260" y="61" text-anchor="middle">vectores + palabras clave</text>
+
+          <!-- 2 JEV califica -->
+          <line class="d-edge" x1="350" y1="48" x2="438" y2="48" marker-end="url(#ah)"/>
+          <text class="d-s" x="394" y="40" text-anchor="middle">candidatos</text>
+          <rect class="d-jev" x="440" y="20" width="190" height="56" rx="8"/>
+          <text class="d-tb" x="535" y="43" text-anchor="middle">2 · JEV califica</text>
+          <text class="d-sj" x="535" y="61" text-anchor="middle">reordena, nunca descarta</text>
+
+          <!-- 2 -> 3 -->
+          <line class="d-edge" x1="535" y1="76" x2="535" y2="168" marker-end="url(#ah)"/>
+          <text class="d-s" x="545" y="118">mejores</text>
+          <text class="d-s" x="545" y="132">pasajes</text>
+
+          <!-- 3 JEV escoge -->
+          <rect class="d-jev" x="440" y="170" width="190" height="56" rx="8"/>
+          <text class="d-tb" x="535" y="193" text-anchor="middle">3 · JEV escoge</text>
+          <text class="d-sj" x="535" y="211" text-anchor="middle">la frase clave de cada pasaje</text>
+
+          <!-- 3 -> 4 -->
+          <line class="d-edge-acc" x1="440" y1="198" x2="352" y2="198" marker-end="url(#ah-acc)"/>
+          <text class="d-sa" x="396" y="216" text-anchor="middle">frase textual</text>
+
+          <!-- 4 Cuaderno -->
+          <rect class="d-acc" x="170" y="160" width="180" height="76" rx="8"/>
+          <text class="d-tb" x="260" y="182" text-anchor="middle">4 · Cuaderno</text>
+          <text class="d-s" x="260" y="200" text-anchor="middle">frase · fuente · ronda</text>
+          <text class="d-s" x="260" y="215" text-anchor="middle">entidades · requisito</text>
+          <text class="d-s" x="260" y="230" text-anchor="middle">confianza</text>
+
+          <!-- cuaderno -> busqueda -->
+          <line class="d-edge-acc" x1="260" y1="160" x2="260" y2="78" marker-end="url(#ah-acc)"/>
+          <text class="d-sa" x="268" y="112">hechos +</text>
+          <text class="d-sa" x="268" y="126">palabras clave</text>
+
+          <!-- cuaderno -> state de JEV -->
+          <line class="d-edge-jev" x1="350" y1="168" x2="448" y2="78" marker-end="url(#ah-jev)"/>
+          <text class="d-sj" x="404" y="150" text-anchor="middle">en el state</text>
+          <text class="d-sj" x="404" y="163" text-anchor="middle">de JEV</text>
+
+          <!-- 4 -> 5 -->
+          <line class="d-edge" x1="260" y1="236" x2="260" y2="288" marker-end="url(#ah)"/>
+
+          <!-- 5 Cobertura -->
+          <rect class="d-box" x="170" y="290" width="180" height="56" rx="8"/>
+          <text class="d-tb" x="260" y="313" text-anchor="middle">5 · ¿Cubre todo?</text>
+          <text class="d-s" x="260" y="331" text-anchor="middle">cobertura por requisito</text>
+
+          <!-- 5 -> otra ronda -->
+          <path class="d-edge-acc" d="M170,318 H145 V66 H168" marker-end="url(#ah-acc)"/>
+          <text class="d-sa" x="135" y="170" text-anchor="end">falta algo:</text>
+          <text class="d-sa" x="135" y="184" text-anchor="end">otra ronda</text>
+          <text class="d-s" x="135" y="202" text-anchor="end">(2–3 rondas)</text>
+
+          <!-- 5 -> salida -->
+          <line class="d-edge" x1="350" y1="318" x2="438" y2="318" marker-end="url(#ah)"/>
+          <text class="d-s" x="394" y="310" text-anchor="middle">cubre todo</text>
+          <rect class="d-good" x="440" y="290" width="190" height="56" rx="8"/>
+          <text class="d-tb" x="535" y="313" text-anchor="middle">Para el agente</text>
+          <text class="d-s" x="535" y="331" text-anchor="middle">cuaderno con citas y huecos</text>
+
+          <text class="d-sb" x="170" y="380">Si falta un requisito y no queda nada que buscar: abstenerse.</text>
+        </svg>
+      </div>
+      <figcaption>La flecha clave es la de la izquierda: la segunda búsqueda ya no usa solo la pregunta, usa también lo que se anotó. Y el cuaderno viaja dentro del “state” que JEV evalúa, así JEV juzga cada pasaje sabiendo qué se encontró antes.</figcaption>
+    </figure>
+    <ul class="plain">
+      <li><strong>Reordenar en vez de descartar</strong> corrige el daño de la etapa 2: un puente mal calificado baja de puesto, pero no desaparece.</li>
+      <li><strong>Escoger frases, no escribirlas</strong>: el cuaderno guarda frases textuales con su fuente, así cada dato tiene cita.</li>
+      <li><strong>Contra errores que se arrastran</strong>: la confianza de un hecho no supera la del hecho que lo originó, se exploran 2 ramas ante la duda, se podan ramas estériles, y las contradicciones (números, fechas) se comparan en código.</li>
+    </ul>
+    <div class="why">
+      <h3>Por qué debería funcionar</h3>
+      <p>Ataca las dos mitades del fallo de la etapa 4. Las palabras del puente aparecen en la frase anotada (“X fue dirigida por <em>Fulano</em>”), así que la segunda búsqueda lo encuentra. Y con esa frase en el state, JEV ya puede ver por qué el siguiente pasaje importa.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 6 ============ -->
+<section class="stage v2" id="e6" aria-labelledby="e6h">
+  <div class="stage-no">6</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">P1 · prueba del mecanismo en MuSiQue</div>
+      <h2 id="e6h">Resultados: las tres piezas del cuaderno funcionan</h2>
+    </div>
+    <p class="take">Antes de construir el bucle completo, se probó cada pieza por separado. Las tres responden que sí, y la prueba pasó su puerta de decisión.</p>
+    <p>Se usaron las 150 preguntas con respuesta de MuSiQue. Cada prueba corresponde a un paso del ciclo de arriba: <strong>T1</strong> es el paso 1 (buscar), <strong>T3</strong> el paso 3 (escoger la frase) y <strong>T2</strong> el paso 2 (calificar con el cuaderno). Costo total: unos US$0.21 de JEV y US$0.005 de Gemini.</p>
+
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw-base"></i>hoy / heurística</span>
+      <span><i class="sw-good"></i>con cuaderno</span>
+      <span><i class="sw-jev"></i>JEV</span>
+      <span><i class="sw-bad"></i>hechos equivocados</span>
+      <span><i class="sw-ref"></i>referencia</span>
+    </div>
+
+    <div class="chart-card">
+      <h3>T1 · ¿La siguiente búsqueda llega al paso intermedio?</h3>
+      <div class="sub">Alcance@30 de pasos intermedios (63 casos): qué parte llega a los 30 candidatos</div>
+      <svg class="chart" viewBox="0 0 400 262" role="img" aria-label="Alcance arroba 30 de pasos intermedios: pregunta sola 0.62, híbrido 0.51, pregunta más hechos 0.90, palabras clave de la entidad 0.94, techo 0.94">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="240"/>
+<text class="tick" x="0.0" y="254" text-anchor="start">0%</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="240"/>
+<text class="tick" x="80.0" y="254" text-anchor="middle">25%</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="240"/>
+<text class="tick" x="160.0" y="254" text-anchor="middle">50%</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="240"/>
+<text class="tick" x="240.0" y="254" text-anchor="middle">75%</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="240"/>
+<text class="tick" x="320.0" y="254" text-anchor="middle">100%</text>
+<text class="blabel" x="0" y="20">Hoy · vector con la pregunta sola</text>
+<rect class="bar b-base" x="0" y="27" width="198.4" height="16" rx="2"/>
+<text class="bval" x="204.4" y="40">0.62</text>
+<text class="blabel" x="0" y="66">Híbrido sin cuaderno</text>
+<rect class="bar b-base" x="0" y="73" width="163.2" height="16" rx="2"/>
+<text class="bval" x="169.2" y="86">0.51</text>
+<text class="blabel" x="0" y="112">Pregunta + hechos del cuaderno</text>
+<rect class="bar b-good" x="0" y="119" width="288.0" height="16" rx="2"/>
+<text class="bval" x="294.0" y="132">0.90</text>
+<text class="blabel" x="0" y="158">Palabras clave de la entidad</text>
+<rect class="bar b-good" x="0" y="165" width="300.8" height="16" rx="2"/>
+<text class="bval" x="306.8" y="178">0.94</text>
+<text class="blabel" x="0" y="204">Techo · sub-pregunta ya resuelta</text>
+<rect class="bar b-ref" x="0" y="211" width="300.8" height="16" rx="2"/>
+<text class="bval" x="306.8" y="224">0.94</text>
+</svg>
+      <p class="sub">Con los hechos del cuaderno la búsqueda alcanza casi el techo. En pasos finales sube de 0.88 a 0.98. Buscar solo por palabras clave con la pregunta sola es peor (0.33).</p>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <h3>T3 · ¿JEV escoge la frase clave?</h3>
+        <div class="sub">Acierto al primer intento, todos los pasos (386 párrafos)</div>
+        <svg class="chart" viewBox="0 0 400 216" role="img" aria-label="Escoger la frase clave, todos los pasos: primera frase 68%, palabras en común 60%, palabras más hechos 66%, JEV 89%">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="194"/>
+<text class="tick" x="0.0" y="208" text-anchor="start">0%</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="194"/>
+<text class="tick" x="80.0" y="208" text-anchor="middle">25%</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="194"/>
+<text class="tick" x="160.0" y="208" text-anchor="middle">50%</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="194"/>
+<text class="tick" x="240.0" y="208" text-anchor="middle">75%</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="194"/>
+<text class="tick" x="320.0" y="208" text-anchor="middle">100%</text>
+<text class="blabel" x="0" y="20">Tomar la primera frase</text>
+<rect class="bar b-base" x="0" y="27" width="217.6" height="16" rx="2"/>
+<text class="bval" x="223.6" y="40">68%</text>
+<text class="blabel" x="0" y="66">Palabras en común</text>
+<rect class="bar b-base" x="0" y="73" width="192.0" height="16" rx="2"/>
+<text class="bval" x="198.0" y="86">60%</text>
+<text class="blabel" x="0" y="112">Palabras en común + hechos</text>
+<rect class="bar b-base" x="0" y="119" width="211.2" height="16" rx="2"/>
+<text class="bval" x="217.2" y="132">66%</text>
+<text class="blabel" x="0" y="158">JEV escoge</text>
+<rect class="bar b-jev" x="0" y="165" width="284.8" height="16" rx="2"/>
+<text class="bval" x="290.8" y="178">89%</text>
+</svg>
+      </div>
+      <div class="chart-card">
+        <h3>T3 · solo pasos intermedios</h3>
+        <div class="sub">Acierto al primer intento (63 párrafos)</div>
+        <svg class="chart" viewBox="0 0 400 216" role="img" aria-label="Escoger la frase clave, pasos intermedios: primera frase 56%, palabras en común 43%, palabras más hechos 54%, JEV 79%">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="194"/>
+<text class="tick" x="0.0" y="208" text-anchor="start">0%</text>
+<line class="grid" x1="80.0" y1="6" x2="80.0" y2="194"/>
+<text class="tick" x="80.0" y="208" text-anchor="middle">25%</text>
+<line class="grid" x1="160.0" y1="6" x2="160.0" y2="194"/>
+<text class="tick" x="160.0" y="208" text-anchor="middle">50%</text>
+<line class="grid" x1="240.0" y1="6" x2="240.0" y2="194"/>
+<text class="tick" x="240.0" y="208" text-anchor="middle">75%</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="194"/>
+<text class="tick" x="320.0" y="208" text-anchor="middle">100%</text>
+<text class="blabel" x="0" y="20">Tomar la primera frase</text>
+<rect class="bar b-base" x="0" y="27" width="179.2" height="16" rx="2"/>
+<text class="bval" x="185.2" y="40">56%</text>
+<text class="blabel" x="0" y="66">Palabras en común</text>
+<rect class="bar b-base" x="0" y="73" width="137.6" height="16" rx="2"/>
+<text class="bval" x="143.6" y="86">43%</text>
+<text class="blabel" x="0" y="112">Palabras en común + hechos</text>
+<rect class="bar b-base" x="0" y="119" width="172.8" height="16" rx="2"/>
+<text class="bval" x="178.8" y="132">54%</text>
+<text class="blabel" x="0" y="158">JEV escoge</text>
+<rect class="bar b-jev" x="0" y="165" width="252.8" height="16" rx="2"/>
+<text class="bval" x="258.8" y="178">79%</text>
+</svg>
+      </div>
+    </div>
+    <p class="sub" style="color:var(--muted);font-size:0.9rem">Cuando la frase clave no es la primera del párrafo, JEV acierta 84% y las palabras en común 44%. Un detalle a corregir: en 70 de 386 párrafos JEV eligió “ninguna”, aunque todos tenían el dato. En el bucle se usará sí/no por frase.</p>
+
+    <div class="chart-card">
+      <h3>T2 · ¿El cuaderno ayuda a JEV a reconocer el siguiente eslabón?</h3>
+      <div class="sub">AUC en pasos intermedios (63): el pasaje correcto contra 4 incorrectos del mismo grupo. La escala empieza en 0.5, que es azar.</div>
+      <svg class="chart" viewBox="0 0 400 262" role="img" aria-label="AUC de reconocimiento en pasos intermedios: orden de búsqueda 0.817, sin cuaderno 0.786, hechos perfectos 0.901, hechos escogidos por JEV 0.871, hechos equivocados 0.752">
+<line class="grid" x1="0.0" y1="6" x2="0.0" y2="240"/>
+<text class="tick" x="0.0" y="254" text-anchor="start">0.5 azar</text>
+<line class="grid" x1="64.0" y1="6" x2="64.0" y2="240"/>
+<text class="tick" x="64.0" y="254" text-anchor="middle">0.6</text>
+<line class="grid" x1="128.0" y1="6" x2="128.0" y2="240"/>
+<text class="tick" x="128.0" y="254" text-anchor="middle">0.7</text>
+<line class="grid" x1="192.0" y1="6" x2="192.0" y2="240"/>
+<text class="tick" x="192.0" y="254" text-anchor="middle">0.8</text>
+<line class="grid" x1="256.0" y1="6" x2="256.0" y2="240"/>
+<text class="tick" x="256.0" y="254" text-anchor="middle">0.9</text>
+<line class="grid" x1="320.0" y1="6" x2="320.0" y2="240"/>
+<text class="tick" x="320.0" y="254" text-anchor="middle">1</text>
+<text class="blabel" x="0" y="20">Referencia · orden de la búsqueda</text>
+<rect class="bar b-ref" x="0" y="27" width="202.9" height="16" rx="2"/>
+<text class="bval" x="208.9" y="40">0.817</text>
+<text class="blabel" x="0" y="66">JEV sin cuaderno (hoy)</text>
+<rect class="bar b-base" x="0" y="73" width="183.0" height="16" rx="2"/>
+<text class="bval" x="189.0" y="86">0.786</text>
+<text class="blabel" x="0" y="112">Con hechos perfectos (oráculo)</text>
+<rect class="bar b-good" x="0" y="119" width="256.6" height="16" rx="2"/>
+<text class="bval" x="262.6" y="132">0.901</text>
+<text class="blabel" x="0" y="158">Con frases escogidas por JEV</text>
+<rect class="bar b-jev" x="0" y="165" width="237.4" height="16" rx="2"/>
+<text class="bval" x="243.4" y="178">0.871</text>
+<text class="blabel" x="0" y="204">Con hechos equivocados</text>
+<rect class="bar b-bad" x="0" y="211" width="161.3" height="16" rx="2"/>
+<text class="bval" x="167.3" y="224">0.752</text>
+</svg>
+      <p class="sub">Sin cuaderno, JEV ordena <em>peor</em> que la propia búsqueda (0.786 contra 0.817), lo mismo que se vio en la etapa 2. Con el cuaderno la supera. Con hechos equivocados la caída es pequeña.</p>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><span class="big up num">0.62 → 0.90</span><span class="lbl">alcance@30 de intermedios con hechos del cuaderno</span></div>
+      <div class="fact"><span class="big up num">89% vs 68%</span><span class="lbl">JEV escoge la frase clave contra “tomar la primera frase”</span></div>
+      <div class="fact"><span class="big up num">+0.115</span><span class="lbl">AUC de intermedios con hechos perfectos (meta de la puerta: ≥ 0.10)</span></div>
+      <div class="fact"><span class="big num">−0.034</span><span class="lbl">con hechos equivocados (límite de la puerta: no bajar más de 0.05)</span></div>
+    </div>
+    <div class="why">
+      <h3>Por qué</h3>
+      <p>La frase anotada trae el nombre del siguiente eslabón, y eso es justo lo que la pregunta original no tenía. Con frases escogidas por el propio JEV (sin ayuda) se conserva cerca del 75% de la ganancia que dan los hechos perfectos.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ETAPA 7 ============ -->
+<section class="stage v2" id="e7" aria-labelledby="e7h">
+  <div class="stage-no">7</div>
+  <div class="stage-body">
+    <div class="stage-head">
+      <div class="eyebrow">Próximas fases · cada una con pre-registro y una sola corrida final</div>
+      <h2 id="e7h">Qué sigue</h2>
+    </div>
+    <p class="take">El mecanismo funciona en piezas. Falta probar el bucle completo, compararlo con lo estándar y medir la abstención.</p>
+    <div class="next">
+      <div class="next-card">
+        <div class="eyebrow">Fase 2 · siguiente</div>
+        <h3>El bucle real</h3>
+        <p>2–3 rondas con cuaderno contra una sola pasada con el mismo presupuesto, en preguntas nuevas.</p>
+        <p class="gate">Puerta: cadena completa@10 al menos 0.05 mejor que el control, con intervalo que excluya 0.</p>
+      </div>
+      <div class="next-card">
+        <div class="eyebrow">Fase 1 · en cuanto haya acceso</div>
+        <h3>Contra un reordenador estándar</h3>
+        <p>Comparar JEV con bge-reranker-v2-m3, y ambos combinados.</p>
+        <p class="gate">Puerta: si el reordenador iguala a JEV y JEV no suma al menos 0.02 de AUC, JEV deja de ordenar.</p>
+      </div>
+      <div class="next-card">
+        <div class="eyebrow">Fase 3</div>
+        <h3>Abstención por cobertura</h3>
+        <p>Decidir “no hay evidencia” revisando requisito por requisito sobre el cuaderno, en vez del filtro actual.</p>
+        <p class="gate">Puerta: AUROC ≥ 0.85 y exactitud balanceada ≥ 0.80.</p>
+      </div>
+    </div>
+    <div class="caveat">
+      <h3>Lo que P1 todavía no demuestra</h3>
+      <ul class="plain">
+        <li>Es una <strong>prueba de mecanismo</strong>, no una evaluación final.</li>
+        <li>Varias condiciones usaron <strong>hechos perfectos (“oráculo”)</strong>: la frase correcta tomada de la respuesta conocida. En la vida real esos hechos los escoge JEV y pueden fallar.</li>
+        <li>Las palabras clave de la entidad (0.94) usaban la respuesta correcta del paso anterior. En el bucle real saldrán de la frase escogida.</li>
+        <li>Las preguntas ya se habían visto en etapas anteriores (dev y test). El bucle se probará en un dev nuevo.</li>
+        <li>Aún no hay comparación con un reordenador estándar.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Fuentes: <span class="num">plan.md</span> (secciones 6 y 17–23) y <span class="num">results/probe/notebook-T1/T2/T3-musique.md</span>. Todas las cifras vienen de esos documentos.
+</footer>
+
+</main>
+</body>
+</html>
