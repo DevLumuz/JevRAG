@@ -100,7 +100,7 @@ func runAbstain(ctx context.Context, cfg config, bench *benchmark, qs []benchQue
 		r.CovPass = (resps[3].Answers["answer_stated"].Noul + 1 - resps[3].Answers["missing_link"].Noul) / 2
 		rows = append(rows, r)
 		if q.Answerable {
-			outcomes = append(outcomes, evaluator.QueryOutcome{ID: q.ID, Expected: q.Gold, Got: tr.Ranked, Hops: q.Hops})
+			outcomes = append(outcomes, evaluator.QueryOutcome{ID: q.ID, Expected: q.Gold, Got: bench.Canon(tr.Ranked), Hops: q.Hops})
 		}
 		if (i+1)%20 == 0 {
 			log.Printf("  %d/%d · paid JEV tokens so far %d (~US$%.3f)", i+1, len(qs), paid, float64(paid)/1e6*jevPricePerMTok)
