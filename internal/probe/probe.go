@@ -154,10 +154,18 @@ func (c *Cache) put(k string, r *jev.Response) error {
 	return err
 }
 
-func cacheKey(model string, state State, qs map[string]jev.Question) string {
+// Get returns a cached response.
+func (c *Cache) Get(key string) (*jev.Response, bool) { return c.get(key) }
+
+// Put stores a response.
+func (c *Cache) Put(key string, r *jev.Response) error { return c.put(key, r) }
+
+// CacheKey hashes (model, state, questions). Any state that marshals to the
+// same JSON shares the entry.
+func CacheKey(model string, state any, qs map[string]jev.Question) string {
 	b, _ := json.Marshal(struct {
 		M string                  `json:"m"`
-		S State                   `json:"s"`
+		S any                     `json:"s"`
 		Q map[string]jev.Question `json:"q"`
 	}{model, state, qs})
 	h := sha256.Sum256(b)
@@ -192,13 +200,38 @@ func Features(resp *jev.Response) map[string]float64 {
 	return f
 }
 
+// Item is one JEV call: a state and the questions asked about it.
+type Item struct {
+	State     any
+	Questions map[string]jev.Question
+}
+
 // Run asks the question set about every pair (cached responses are reused)
 // and returns one feature map per pair, in order. maxInputTokens caps paid
 // input tokens (0 = no cap).
 func Run(ctx context.Context, client jev.Client, model string, set *judge.QuestionSet, pairs []Pair,
 	cache *Cache, concurrency int, maxInputTokens int64) ([]map[string]float64, Usage, error) {
+	items := make([]Item, len(pairs))
+	for i, p := range pairs {
+		items[i] = Item{State: StateFor(p), Questions: set.Questions}
+	}
+	resps, usage, err := RunItems(ctx, client, model, items, cache, concurrency, maxInputTokens)
+	if err != nil {
+		return nil, usage, err
+	}
+	out := make([]map[string]float64, len(resps))
+	for i, r := range resps {
+		out[i] = Features(r)
+	}
+	return out, usage, nil
+}
 
-	out := make([]map[string]float64, len(pairs))
+// RunItems makes every call (cached responses are reused) and returns the
+// responses in order. maxInputTokens caps paid input tokens (0 = no cap).
+func RunItems(ctx context.Context, client jev.Client, model string, items []Item,
+	cache *Cache, concurrency int, maxInputTokens int64) ([]*jev.Response, Usage, error) {
+
+	out := make([]*jev.Response, len(items))
 	var (
 		mu    sync.Mutex
 		usage Usage
@@ -206,11 +239,10 @@ func Run(ctx context.Context, client jev.Client, model string, set *judge.Questi
 		wg    sync.WaitGroup
 	)
 	sem := make(chan struct{}, max(concurrency, 1))
-	for i, p := range pairs {
-		st := StateFor(p)
-		key := cacheKey(model, st, set.Questions)
+	for i, it := range items {
+		key := CacheKey(model, it.State, it.Questions)
 		if r, ok := cache.get(key); ok {
-			out[i] = Features(r)
+			out[i] = r
 			usage.CacheHits++
 			continue
 		}
@@ -223,15 +255,15 @@ func Run(ctx context.Context, client jev.Client, model string, set *judge.Questi
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, st State, key string) {
+		go func(i int, it Item, key string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			r, err := client.SystemOne(ctx, st, set.Questions)
+			r, err := client.SystemOne(ctx, it.State, it.Questions)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				if first == nil {
-					first = fmt.Errorf("probe: pair %d (%s): %w", i, pairs[i].QueryID, err)
+					first = fmt.Errorf("probe: item %d: %w", i, err)
 				}
 				return
 			}
@@ -240,16 +272,16 @@ func Run(ctx context.Context, client jev.Client, model string, set *judge.Questi
 			if err := cache.put(key, r); err != nil && first == nil {
 				first = err
 			}
-			out[i] = Features(r)
-		}(i, st, key)
+			out[i] = r
+		}(i, it, key)
 	}
 	wg.Wait()
 	if first != nil {
 		return nil, usage, first
 	}
-	for i, f := range out {
-		if f == nil {
-			return nil, usage, fmt.Errorf("probe: stopped at pair %d: input token cap %d reached", i, maxInputTokens)
+	for i, r := range out {
+		if r == nil {
+			return nil, usage, fmt.Errorf("probe: stopped at item %d: input token cap %d reached", i, maxInputTokens)
 		}
 	}
 	return out, usage, nil
