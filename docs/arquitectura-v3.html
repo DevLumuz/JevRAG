@@ -1,0 +1,729 @@
+<title>Arquitectura JevRAG v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una columna de lectura; capas numeradas en orden real del flujo (la numeración es la secuencia del sistema).
+   Mismo sistema visual que "Evolución de JevRAG": morado = JEV decide, ámbar = el LLM escribe, verde azulado = cuaderno/código. */
+:root {
+  --bg: #F2F5F6; --surface: #FFFFFF; --fg: #16212A; --muted: #56646F;
+  --line: #D2DADF; --line-strong: #8C9AA5; --bar: #AAB6BF;
+  --accent: #0C6B70; --accent-soft: #DCEEEE;
+  --jev: #6A40B4; --jev-soft: #EEE7F8;
+  --llm: #9A5B00; --llm-soft: #FBEFD9;
+  --good: #2A7A4A; --good-soft: #E0F0E6;
+  --bad: #B03A28; --bad-soft: #F8E2DD;
+  --font-display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+    --line: #2B3843; --line-strong: #63727E; --bar: #4E5C67;
+    --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+    --llm: #E9B25C; --llm-soft: #3A2A12;
+    --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+  --line: #2B3843; --line-strong: #63727E; --bar: #4E5C67;
+  --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+  --llm: #E9B25C; --llm-soft: #3A2A12;
+  --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.6; }
+.wrap { max-width: 900px; margin: 0 auto; padding-inline: 16px; padding-block: 40px 72px; }
+h1, h2, h3, h4 { font-family: var(--font-display); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 2.8rem); }
+h2 { font-size: clamp(1.4rem, 3.8vw, 1.8rem); }
+h3 { font-size: 1.15rem; }
+h4 { font-size: 1rem; }
+p { margin: 0; max-width: 68ch; }
+ul, ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 70ch; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--muted); font-size: 1.1rem; }
+.jev { color: var(--jev); font-weight: 700; }
+.llm { color: var(--llm); font-weight: 700; }
+.acc { color: var(--accent); font-weight: 700; }
+header.top { display: grid; gap: 14px; margin-bottom: 26px; }
+section { display: grid; gap: 16px; padding-block: 34px; border-top: 1px solid var(--line); }
+section > p, section > ul { max-width: 70ch; }
+.thesis { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 8px; }
+.thesis p { font-size: 1.15rem; line-height: 1.5; max-width: none; }
+.roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.role { border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; border: 1px solid var(--line); background: var(--surface); }
+.role h3 { font-size: 1.02rem; }
+.role p { font-size: 0.93rem; }
+.role.r-jev { border-top: 4px solid var(--jev); }
+.role.r-llm { border-top: 4px solid var(--llm); }
+.role.r-code { border-top: 4px solid var(--accent); }
+.role.r-mem { border-top: 4px solid var(--line-strong); }
+.role .does { font-family: var(--font-mono); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+figure { margin: 0; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; height: auto; min-width: 620px; }
+figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 8px; max-width: 70ch; }
+.layer { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 0 18px; }
+.layer-no { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600; line-height: 1; padding-top: 4px; color: var(--muted); }
+.layer-no.n-jev { color: var(--jev); } .layer-no.n-llm { color: var(--llm); } .layer-no.n-acc { color: var(--accent); }
+.layer-body { display: grid; gap: 14px; min-width: 0; }
+.who { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-block; font-family: var(--font-mono); font-size: 0.74rem; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.chip.c-jev { background: var(--jev-soft); color: var(--jev); }
+.chip.c-llm { background: var(--llm-soft); color: var(--llm); }
+.chip.c-acc { background: var(--accent-soft); color: var(--accent); }
+.chip.c-ok { background: var(--good-soft); color: var(--good); }
+.chip.c-no { background: var(--bad-soft); color: var(--bad); }
+.chip.c-mid { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.io { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h4 { font-size: 0.98rem; }
+.card p, .card li { font-size: 0.94rem; }
+pre.code { margin: 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; color: var(--fg); }
+pre.code .k { color: var(--jev); }
+pre.code .s { color: var(--accent); }
+pre.code .c { color: var(--muted); font-style: italic; }
+pre.code .l { color: var(--llm); }
+.codehead { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.codehead .eyebrow { color: var(--fg); }
+.note { border-left: 3px solid var(--line-strong); padding: 4px 0 4px 12px; font-size: 0.94rem; color: var(--muted); max-width: 70ch; }
+.note b { color: var(--fg); }
+.evid { border-left: 3px solid var(--good); padding: 6px 0 6px 12px; font-size: 0.94rem; max-width: 70ch; }
+.evid b { color: var(--good); }
+.risk { border-left: 3px solid var(--bad); padding: 6px 0 6px 12px; font-size: 0.94rem; max-width: 70ch; }
+.risk b { color: var(--bad); }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 0.92rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.steps { display: grid; counter-reset: s; }
+.step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 14px; position: relative; padding-bottom: 18px; }
+.step::before { counter-increment: s; content: counter(s); font-family: var(--font-mono); font-weight: 600; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 0.85rem; }
+.step::after { content: ""; position: absolute; left: 12px; top: 30px; bottom: 2px; width: 2px; background: var(--line); }
+.step:last-child::after { display: none; }
+.step > div { display: grid; gap: 8px; min-width: 0; }
+.step h4 { padding-top: 2px; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; padding: 0; list-style: none; }
+.toc a { display: inline-block; text-decoration: none; color: var(--fg); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 0.86rem; }
+footer { border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.85rem; color: var(--muted); }
+/* SVG */
+svg text { font-family: var(--font-body); }
+.b-plain { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1.2; }
+.b-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+.b-jev { fill: var(--jev-soft); stroke: var(--jev); stroke-width: 1.6; }
+.b-llm { fill: var(--llm-soft); stroke: var(--llm); stroke-width: 1.6; }
+.b-acc { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; }
+.b-good { fill: var(--good-soft); stroke: var(--good); stroke-width: 1.5; }
+.b-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.t { fill: var(--fg); font-size: 13px; }
+.tb { fill: var(--fg); font-size: 13.5px; font-weight: 700; }
+.ts { fill: var(--muted); font-size: 11px; }
+.tj { fill: var(--jev); font-size: 11px; font-weight: 700; }
+.tl { fill: var(--llm); font-size: 11px; font-weight: 700; }
+.ta { fill: var(--accent); font-size: 11px; font-weight: 700; }
+.e { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.e-acc { stroke: var(--accent); stroke-width: 2; fill: none; }
+.e-dash { stroke: var(--line-strong); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.e-llm { stroke: var(--llm); stroke-width: 1.6; fill: none; }
+.m-fg { fill: var(--muted); } .m-acc { fill: var(--accent); } .m-llm { fill: var(--llm); }
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+  .layer { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .layer-no { font-size: 1.15rem; }
+}
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-fg" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-acc" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-llm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="m-llm" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header class="top">
+  <div class="eyebrow">JevRAG · propuesta de arquitectura v3 · 4 de octubre de 2026 · borrador para discutir</div>
+  <h1>Arquitectura JevRAG v3</h1>
+  <p class="lede">Del mensaje del usuario a la evidencia citada: quién decide cada paso, cuándo se activa el LLM, qué escribe, qué ve JEV y por qué este diseño debería rendir más que el actual.</p>
+  <ul class="toc" aria-label="Contenido">
+    <li><a href="#roles">Roles</a></li>
+    <li><a href="#flujo">Flujo completo</a></li>
+    <li><a href="#capa1">1 · Triaje</a></li>
+    <li><a href="#capa2">2 · Kit del LLM</a></li>
+    <li><a href="#capa3">3 · Puntos de entrada</a></li>
+    <li><a href="#capa4">4 · Bucle</a></li>
+    <li><a href="#capa5">5 · Cierre</a></li>
+    <li><a href="#salida">Salida</a></li>
+    <li><a href="#ejemplos">Ejemplos</a></li>
+    <li><a href="#porque">Por qué funcionaría</a></li>
+    <li><a href="#riesgos">Riesgos</a></li>
+    <li><a href="#validar">Cómo validarlo</a></li>
+  </ul>
+</header>
+
+<div class="thesis">
+  <div class="eyebrow">La idea en una frase</div>
+  <p><span class="jev">JEV decide</span> qué tipo de petición es y cuánta ayuda hace falta; <span class="llm">el LLM escribe</span> solo cuando JEV lo pide (preguntas clave, variantes, términos y las preguntas que JEV debe responder); <span class="acc">el código y el cuaderno</span> buscan por varios puntos de entrada y guardan solo frases textuales con cita. Nada de lo que escribe el LLM es evidencia.</p>
+</div>
+
+<!-- ================= ROLES ================= -->
+<section id="roles" aria-labelledby="roles-h">
+  <h2 id="roles-h">Quién hace qué</h2>
+  <p>Cada pieza hace lo que mejor sabe hacer. La regla de fondo: <strong>no se asume nada</strong>. Ni que la petición viene completa, ni que el LLM conoce el contexto, ni que hace falta investigar.</p>
+  <div class="roles">
+    <div class="role r-jev"><div class="does">decide</div><h3>JEV</h3><p>Responde preguntas cerradas (sí/no, opción, puntaje) con probabilidad calibrada. Decide el tipo de petición, si activar al LLM, qué párrafo y qué frase sirven, si seguir leyendo y si ya se resolvió lo pedido. <strong>Nunca escribe.</strong> Muy barato: unos US$0.00004 por pregunta.</p></div>
+    <div class="role r-llm"><div class="does">escribe, solo si JEV lo pide</div><h3>El LLM (agente)</h3><p>Responde de forma directa lo conversacional. Cuando JEV lo activa, escribe el <em>kit de investigación</em>: la petición autocontenida, pasos, 5 variantes, términos, requisitos y las preguntas a la medida para JEV. Lo que escribe orienta la búsqueda; no se cita.</p></div>
+    <div class="role r-code"><div class="does">calcula y recuerda</div><h3>Código + cuaderno</h3><p>Lanza las búsquedas (vector + palabras clave), fusiona resultados, propone vecinos y referencias, compara números y fechas, aplica filtros de vigencia y permisos, y guarda el cuaderno: frases textuales con su cita exacta.</p></div>
+    <div class="role r-mem"><div class="does">contiene</div><h3>La memoria</h3><p>Documentos partidos por estructura (ley → artículo → párrafo; procedimiento → sección → paso), cada fragmento con su ruta, sus vecinos, sus referencias y sus metadatos (vigencia, área, permisos).</p></div>
+  </div>
+</section>
+
+<!-- ================= FLUJO ================= -->
+<section id="flujo" aria-labelledby="flujo-h">
+  <h2 id="flujo-h">El flujo completo</h2>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 760 900" role="img" aria-label="Flujo: entrada del usuario, triaje de JEV con tres salidas (responde el LLM, búsqueda simple, investigación); en investigación JEV decide si activar al LLM, que escribe el kit; luego puntos de entrada múltiples, bucle con cuaderno y cierre de JEV con cuatro salidas: entrega, otra ronda, no hay evidencia o pedir aclaración.">
+        <!-- input -->
+        <rect class="b-plain" x="250" y="14" width="260" height="56" rx="9"/>
+        <text class="tb" x="380" y="38" text-anchor="middle">Entrada del usuario</text>
+        <text class="ts" x="380" y="56" text-anchor="middle">mensaje + el contexto que haya</text>
+        <line class="e" x1="380" y1="70" x2="380" y2="104" marker-end="url(#ah)"/>
+        <!-- capa 1 -->
+        <rect class="b-jev" x="215" y="106" width="330" height="62" rx="9"/>
+        <text class="tb" x="380" y="132" text-anchor="middle">1 · Triaje — JEV</text>
+        <text class="tj" x="380" y="152" text-anchor="middle">¿qué tipo de petición es?</text>
+        <!-- branches -->
+        <line class="e" x1="290" y1="168" x2="135" y2="226" marker-end="url(#ah)"/>
+        <line class="e" x1="380" y1="168" x2="380" y2="226" marker-end="url(#ah)"/>
+        <line class="e" x1="470" y1="168" x2="625" y2="226" marker-end="url(#ah)"/>
+        <text class="ts" x="160" y="186" text-anchor="middle">conversación o</text>
+        <text class="ts" x="160" y="199" text-anchor="middle">saber general</text>
+        <text class="ts" x="396" y="202">dato puntual</text>
+        <text class="ts" x="600" y="186" text-anchor="middle">asume una</text>
+        <text class="ts" x="600" y="199" text-anchor="middle">investigación</text>
+        <rect class="b-llm" x="20" y="228" width="230" height="58" rx="9"/>
+        <text class="tb" x="135" y="252" text-anchor="middle">Responde el LLM</text>
+        <text class="tl" x="135" y="271" text-anchor="middle">sin tocar la memoria · fin</text>
+        <rect class="b-box" x="270" y="228" width="220" height="58" rx="9"/>
+        <text class="tb" x="380" y="252" text-anchor="middle">Búsqueda simple</text>
+        <text class="ts" x="380" y="271" text-anchor="middle">1 pasada, sin LLM</text>
+        <rect class="b-jev" x="510" y="228" width="230" height="58" rx="9"/>
+        <text class="tb" x="625" y="252" text-anchor="middle">2 · ¿Activar al LLM? — JEV</text>
+        <text class="tj" x="625" y="271" text-anchor="middle">qué ayuda pedir</text>
+        <!-- capa 2 -> kit -->
+        <line class="e-llm" x1="625" y1="286" x2="625" y2="326" marker-end="url(#ah-llm)"/>
+        <text class="tl" x="633" y="311">con ayuda</text>
+        <rect class="b-llm" x="510" y="328" width="230" height="74" rx="9"/>
+        <text class="tb" x="625" y="350" text-anchor="middle">El LLM escribe el kit</text>
+        <text class="tl" x="625" y="369" text-anchor="middle">pasos · 5 variantes · términos</text>
+        <text class="tl" x="625" y="386" text-anchor="middle">requisitos · preguntas para JEV</text>
+        <!-- sin ayuda -->
+        <path class="e-dash" d="M740,262 H752 V470 H562" marker-end="url(#ah)"/>
+        <text class="ts" x="748" y="420" text-anchor="end">sin ayuda</text>
+        <!-- kit -> capa3 -->
+        <path class="e-llm" d="M625,402 V446 H562" marker-end="url(#ah-llm)"/>
+        <!-- simple -> capa3 -->
+        <line class="e" x1="380" y1="286" x2="380" y2="430" marker-end="url(#ah)"/>
+        <text class="ts" x="388" y="362">solo la pregunta</text>
+        <!-- capa 3 -->
+        <rect class="b-acc" x="200" y="432" width="360" height="64" rx="9"/>
+        <text class="tb" x="380" y="458" text-anchor="middle">3 · Puntos de entrada — código</text>
+        <text class="ta" x="380" y="478" text-anchor="middle">varias búsquedas en paralelo, fusionadas</text>
+        <line class="e" x1="380" y1="496" x2="380" y2="532" marker-end="url(#ah)"/>
+        <!-- capa 4 -->
+        <rect class="b-acc" x="190" y="534" width="380" height="112" rx="10"/>
+        <text class="tb" x="380" y="560" text-anchor="middle">4 · Bucle con cuaderno</text>
+        <text class="t" x="380" y="582" text-anchor="middle">JEV califica (preguntas fijas + a la medida)</text>
+        <text class="t" x="380" y="602" text-anchor="middle">JEV elige frases → cuaderno con cita</text>
+        <text class="t" x="380" y="622" text-anchor="middle">seguir leyendo · búsquedas por lo pendiente</text>
+        <path class="e-acc" d="M190,600 H150 V556 H188" marker-end="url(#ah-acc)"/>
+        <text class="ta" x="144" y="582" text-anchor="end">rondas</text>
+        <line class="e" x1="380" y1="646" x2="380" y2="682" marker-end="url(#ah)"/>
+        <!-- capa 5 -->
+        <rect class="b-jev" x="215" y="684" width="330" height="62" rx="9"/>
+        <text class="tb" x="380" y="710" text-anchor="middle">5 · Cierre — JEV</text>
+        <text class="tj" x="380" y="730" text-anchor="middle">¿se resolvió lo pedido? ¿qué falta?</text>
+        <!-- outputs -->
+        <line class="e" x1="300" y1="746" x2="100" y2="806" marker-end="url(#ah)"/>
+        <line class="e" x1="350" y1="746" x2="290" y2="806" marker-end="url(#ah)"/>
+        <line class="e" x1="410" y1="746" x2="470" y2="806" marker-end="url(#ah)"/>
+        <line class="e" x1="460" y1="746" x2="660" y2="806" marker-end="url(#ah)"/>
+        <rect class="b-good" x="12" y="808" width="176" height="70" rx="9"/>
+        <text class="tb" x="100" y="832" text-anchor="middle">Entrega al agente</text>
+        <text class="ts" x="100" y="850" text-anchor="middle">hechos con cita,</text>
+        <text class="ts" x="100" y="864" text-anchor="middle">cobertura, conflictos</text>
+        <rect class="b-box" x="202" y="808" width="176" height="70" rx="9"/>
+        <text class="tb" x="290" y="832" text-anchor="middle">Otra ronda</text>
+        <text class="ts" x="290" y="850" text-anchor="middle">vuelve a la capa 4</text>
+        <text class="ts" x="290" y="864" text-anchor="middle">(o a la 2 si escala)</text>
+        <rect class="b-bad" x="392" y="808" width="176" height="70" rx="9"/>
+        <text class="tb" x="480" y="832" text-anchor="middle">No hay evidencia</text>
+        <text class="ts" x="480" y="850" text-anchor="middle">dice qué requisito</text>
+        <text class="ts" x="480" y="864" text-anchor="middle">falta</text>
+        <rect class="b-plain" x="582" y="808" width="166" height="70" rx="9"/>
+        <text class="tb" x="665" y="832" text-anchor="middle">Pedir aclaración</text>
+        <text class="ts" x="665" y="850" text-anchor="middle">el agente pregunta</text>
+        <text class="ts" x="665" y="864" text-anchor="middle">al usuario</text>
+      </svg>
+    </div>
+    <figcaption>Morado: JEV decide. Ámbar: el LLM escribe. Verde azulado: código y cuaderno. La búsqueda simple también pasa por el cierre: si JEV ve que no se resolvió, <strong>escala</strong> a la capa 2. Así una petición mal clasificada al principio se corrige al final.</figcaption>
+  </figure>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Modo</th><th>Cuándo</th><th>Qué corre</th><th>Costo aproximado</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip c-llm">Directo</span></td><td>Saludo, charla, saber general, algo sobre la conversación misma</td><td>Solo el LLM</td><td class="num">1 triaje JEV (~US$0.0001)</td></tr>
+      <tr><td><span class="chip c-acc">Simple</span></td><td>Pide un dato puntual que debería estar en la memoria y se entiende solo</td><td>Triaje + 1 búsqueda + JEV califica 30 + cierre</td><td class="num">~US$0.001</td></tr>
+      <tr><td><span class="chip c-jev">Investigación</span></td><td>Asume que se investigará: varios pasos, condiciones, depende de contexto, cruzar documentos</td><td>Triaje + (kit del LLM) + puntos de entrada + bucle de 1–5 rondas + cierre</td><td class="num">~US$0.002–0.005 JEV + 1 llamada LLM</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Costos medidos hoy: una pasada con JEV sobre 30 párrafos ≈ US$0.001; el bucle con cuaderno ≈ US$0.0018 por pregunta en MuSiQue y ≈ US$0.004 en leyes (artículos largos).</p>
+</section>
+
+<!-- ================= CAPA 1 ================= -->
+<section id="capa1" aria-labelledby="c1h">
+  <div class="layer">
+    <div class="layer-no n-jev">1</div>
+    <div class="layer-body">
+      <div class="eyebrow">Capa 1</div>
+      <h2 id="c1h">Triaje: ¿qué tipo de petición es?</h2>
+      <div class="who"><span class="chip c-jev">decide JEV</span><span class="chip c-mid">1 llamada · 5 preguntas</span></div>
+      <p>Antes de gastar en buscar, JEV lee la entrada y decide el camino. Es la capa que hoy no existe, y la que explica el resultado en leyes: allí una búsqueda bastaba y el bucle gastaba 2.8 veces más sin ganar.</p>
+      <div class="codehead"><span class="eyebrow">State que ve JEV</span><span class="chip c-mid">genérico, cualquier tema</span></div>
+<pre class="code">{
+  <span class="k">"input"</span>: <span class="s">"Oye, y con lo que te conté del trabajador de la planta de Toluca, ¿lo podemos correr sin pagarle?"</span>,
+  <span class="k">"recent_context"</span>: [                                 <span class="c">// lo que haya; puede venir vacío</span>
+    <span class="s">"Usuario: tengo un operador que faltó 3 días este mes sin avisar"</span>
+  ],
+  <span class="k">"memory_scope"</span>: <span class="s">"leyes laborales de México y políticas internas de RH"</span>   <span class="c">// qué contiene la memoria</span>
+}</pre>
+      <div class="codehead"><span class="eyebrow">Preguntas fijas del triaje</span></div>
+<pre class="code">{
+  <span class="k">"request_kind"</span>: { <span class="s">"type"</span>: <span class="s">"choice"</span>,
+    <span class="s">"instructions"</span>: <span class="s">"¿Qué necesita `input` para responderse bien?"</span>,
+    <span class="s">"criteria"</span>: {
+      <span class="s">"conversation"</span>: <span class="s">"Saludo, agradecimiento, charla o algo sobre la conversación misma."</span>,
+      <span class="s">"general_knowledge"</span>: <span class="s">"Se responde con saber general; no depende de documentos de `memory_scope`."</span>,
+      <span class="s">"lookup"</span>: <span class="s">"Pide un dato puntual que debería estar escrito en un documento de `memory_scope`."</span>,
+      <span class="s">"research"</span>: <span class="s">"Asume que se investigará: varias condiciones, pasos, casos o documentos de `memory_scope`."</span>
+    } },
+  <span class="k">"self_contained"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+    <span class="s">"instructions"</span>: <span class="s">"¿`input` se entiende sin la conversación previa (no usa 'eso', 'lo que te conté', 'él')?"</span> },
+  <span class="k">"multi_step"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+    <span class="s">"instructions"</span>: <span class="s">"¿Responder exige encadenar más de un dato (uno lleva al siguiente)?"</span> },
+  <span class="k">"has_conditions"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+    <span class="s">"instructions"</span>: <span class="s">"¿`input` trae un caso concreto con condiciones (fechas, montos, tamaño, lugar) que cambian la respuesta?"</span> },
+  <span class="k">"too_ambiguous"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+    <span class="s">"instructions"</span>: <span class="s">"¿Falta un dato tan básico que conviene preguntarle al usuario antes de buscar?"</span> }
+}</pre>
+      <div class="io">
+        <div class="card"><h4>Reglas de decisión (código)</h4><ul>
+          <li><b>conversation / general_knowledge</b> alto → responde el LLM.</li>
+          <li><b>lookup</b> y <b>self_contained</b> → búsqueda simple.</li>
+          <li><b>research</b>, o cualquiera de <b>multi_step</b>, <b>has_conditions</b> o <b>¬self_contained</b> → investigación (capa 2).</li>
+          <li><b>too_ambiguous</b> muy alto → el agente pregunta primero.</li>
+        </ul></div>
+        <div class="card"><h4>Notas</h4><ul>
+          <li>Ante la duda, se busca: equivocarse hacia "simple" se corrige en el cierre; equivocarse hacia "directo" puede inventar.</li>
+          <li>Los umbrales se ajustan en dev y se congelan.</li>
+          <li>Opción de ajuste fino: cuando el LLM responde directo, el cierre de la capa 5 no corre; para lo sensible (leyes, políticas) se puede forzar siempre al menos "simple".</li>
+        </ul></div>
+      </div>
+      <p class="evid"><b>Evidencia:</b> en MuSiQue el bucle ganó +10 puntos de cadena completa; en leyes empató con una sola pasada que cuesta 2.8× menos. El triaje captura lo mejor de ambos casos.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAPA 2 ================= -->
+<section id="capa2" aria-labelledby="c2h">
+  <div class="layer">
+    <div class="layer-no n-llm">2</div>
+    <div class="layer-body">
+      <div class="eyebrow">Capa 2</div>
+      <h2 id="c2h">¿Activar al LLM? y el kit de investigación</h2>
+      <div class="who"><span class="chip c-jev">decide JEV</span><span class="chip c-llm">escribe el LLM</span><span class="chip c-mid">1 llamada JEV + 1 llamada LLM</span></div>
+      <p>Que la petición sea "investigación" no obliga a usar el LLM. JEV decide si la ayuda vale la pena; por ejemplo, una pregunta ya autocontenida, con términos técnicos exactos y un solo paso, puede investigarse sin kit. Cuando sí la vale, JEV también decide <strong>qué piezas</strong> pedir.</p>
+      <div class="codehead"><span class="eyebrow">Preguntas de activación (mismo state del triaje + sus respuestas)</span></div>
+<pre class="code">{
+  <span class="k">"needs_rewrite"</span>:   { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Hay que reescribir `input` para que una búsqueda lo entienda sin la conversación?"</span> },
+  <span class="k">"needs_steps"</span>:     { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Conviene partir `input` en sub-preguntas que se responden en orden?"</span> },
+  <span class="k">"needs_vocabulary"</span>:{ <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Las palabras de `input` probablemente no son las que usan los documentos (coloquial vs. técnico)?"</span> },
+  <span class="k">"needs_checklist"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿La respuesta depende de varios requisitos que hay que verificar uno por uno?"</span> }
+}</pre>
+      <p class="note"><b>Por qué piezas y no todo siempre:</b> cada pieza cuesta tokens del LLM, agrega canales de búsqueda (y ruido) y alarga la latencia. Pedir solo lo que JEV juzga útil mantiene barato el caso común.</p>
+
+      <div class="codehead"><span class="eyebrow">Body del kit que escribe el LLM</span><span class="chip c-llm">salida estructurada · ~400 tokens</span></div>
+<pre class="code">{
+  <span class="l">"standalone"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización a un operador que faltó 3 días injustificados en el mes?"</span>,
+  <span class="l">"case"</span>: { <span class="s">"puesto"</span>: <span class="s">"operador de planta"</span>, <span class="s">"lugar"</span>: <span class="s">"Toluca, Estado de México"</span>, <span class="s">"faltas"</span>: <span class="s">"3 en el mes, sin aviso"</span> },
+  <span class="l">"steps"</span>: [
+    { <span class="s">"id"</span>: 1, <span class="s">"ask"</span>: <span class="s">"¿Qué causas permiten rescindir la relación de trabajo sin responsabilidad para el patrón?"</span>, <span class="s">"needs"</span>: [] },
+    { <span class="s">"id"</span>: 2, <span class="s">"ask"</span>: <span class="s">"¿Cuántas faltas injustificadas y en qué periodo configuran {1}?"</span>, <span class="s">"needs"</span>: [1] },
+    { <span class="s">"id"</span>: 3, <span class="s">"ask"</span>: <span class="s">"¿Qué aviso o procedimiento debe seguir el patrón al rescindir por {2}?"</span>, <span class="s">"needs"</span>: [2] }
+  ],
+  <span class="l">"variants"</span>: [                                    <span class="c">// 5 maneras distintas de pedir lo mismo → 5 puntos de entrada</span>
+    <span class="s">"causales de rescisión laboral por inasistencias"</span>,
+    <span class="s">"despido justificado por faltas de asistencia sin permiso"</span>,
+    <span class="s">"número de faltas que permite terminar el contrato sin indemnizar"</span>,
+    <span class="s">"política interna de RH sobre ausentismo y sanciones"</span>,
+    <span class="s">"aviso escrito de rescisión al trabajador: plazo y forma"</span>
+  ],
+  <span class="l">"terms"</span>: [<span class="s">"rescisión"</span>, <span class="s">"sin responsabilidad para el patrón"</span>, <span class="s">"faltas de asistencia"</span>, <span class="s">"aviso de rescisión"</span>, <span class="s">"ausentismo"</span>],
+  <span class="l">"requirements"</span>: [
+    <span class="s">"R1 causa legal que permite rescindir"</span>,
+    <span class="s">"R2 umbral de faltas y periodo"</span>,
+    <span class="s">"R3 procedimiento o aviso obligatorio"</span>,
+    <span class="s">"R4 excepciones o reglas internas que cambien la respuesta"</span>
+  ],
+  <span class="l">"jev_questions"</span>: {                                <span class="c">// preguntas a la medida para juzgar pasajes</span>
+    <span class="s">"q_R2"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`passage` establece cuántas faltas injustificadas, y en qué periodo, permiten rescindir?"</span> },
+    <span class="s">"q_R3"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`passage` describe un aviso o procedimiento que el patrón debe seguir al rescindir?"</span> },
+    <span class="s">"q_R4"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`passage` establece una excepción o regla interna que cambie si se puede rescindir?"</span> }
+  },
+  <span class="l">"closing_questions"</span>: {                            <span class="c">// lo que JEV debe poder afirmar al final</span>
+    <span class="s">"c_case"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Los hechos de `known_facts` aplican a un operador con 3 faltas en un mes?"</span> }
+  },
+  <span class="l">"hypothetical"</span>: <span class="s">"Son causas de rescisión sin responsabilidad para el patrón… tener el trabajador más de [n] faltas de asistencia en un periodo de [días]…"</span>,
+  <span class="l">"answer_type"</span>: <span class="s">"sí/no con condiciones + procedimiento"</span>
+}</pre>
+      <div class="io">
+        <div class="card"><h4>Reglas que se le dan al LLM</h4><ul>
+          <li>No afirmar datos que no vienen en la entrada: lo desconocido va entre corchetes (<code>[n]</code>, <code>[días]</code>).</li>
+          <li>Las preguntas para JEV <b>no llevan la respuesta</b>: "¿establece cuántas faltas…?", nunca "¿dice que son 3 faltas?".</li>
+          <li>Variantes diversas: vocabulario técnico, coloquial, del lado de la política interna, del procedimiento.</li>
+          <li>Formato fijo y corto, igual para cualquier tema.</li>
+        </ul></div>
+        <div class="card"><h4>Para qué sirve cada pieza</h4><ul>
+          <li><b>standalone, case</b> → van al state de JEV (juzga si aplica al caso).</li>
+          <li><b>steps, variants, terms, hypothetical</b> → puntos de entrada (capa 3).</li>
+          <li><b>requirements</b> → partes del cuaderno (cubierta / pendiente).</li>
+          <li><b>jev_questions</b> → se suman a las fijas en el bucle (capa 4).</li>
+          <li><b>closing_questions</b> → se suman al cierre (capa 5).</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAPA 3 ================= -->
+<section id="capa3" aria-labelledby="c3h">
+  <div class="layer">
+    <div class="layer-no n-acc">3</div>
+    <div class="layer-body">
+      <div class="eyebrow">Capa 3</div>
+      <h2 id="c3h">Puntos de entrada múltiples</h2>
+      <div class="who"><span class="chip c-acc">código</span><span class="chip c-mid">sin JEV · embeddings baratos</span></div>
+      <p>Hoy entramos a la memoria por <strong>un solo punto</strong>: el vector de la pregunta. Con el kit entramos por varios a la vez. Cada variante y cada paso se convierte en su propio vector; los términos van a la búsqueda por palabras; luego todo se fusiona. Así se cubren conceptos que la pregunta no nombra.</p>
+      <figure>
+        <div class="diagram">
+          <svg viewBox="0 0 720 360" role="img" aria-label="Canales de entrada: pregunta original, petición autocontenida, cinco variantes, pasos, términos y pasaje hipotético; cada uno produce una lista; se fusionan con RRF y salen hasta 30 candidatos para JEV.">
+            <text class="ts" x="16" y="20">canal</text>
+            <text class="ts" x="250" y="20">búsqueda</text>
+            <g>
+              <rect class="b-plain" x="12" y="32" width="210" height="34" rx="7"/><text class="t" x="24" y="54">pregunta original</text>
+              <rect class="b-llm" x="12" y="74" width="210" height="34" rx="7"/><text class="t" x="24" y="96">petición autocontenida</text>
+              <rect class="b-llm" x="12" y="116" width="210" height="34" rx="7"/><text class="t" x="24" y="138">5 variantes (5 vectores)</text>
+              <rect class="b-llm" x="12" y="158" width="210" height="34" rx="7"/><text class="t" x="24" y="180">pasos sin huecos</text>
+              <rect class="b-llm" x="12" y="200" width="210" height="34" rx="7"/><text class="t" x="24" y="222">términos exactos</text>
+              <rect class="b-llm" x="12" y="242" width="210" height="34" rx="7"/><text class="t" x="24" y="264">pasaje hipotético</text>
+              <rect class="b-acc" x="12" y="284" width="210" height="34" rx="7"/><text class="t" x="24" y="306">filtros (vigencia, área, permisos)</text>
+            </g>
+            <g>
+              <rect class="b-box" x="250" y="32" width="120" height="34" rx="7"/><text class="ts" x="310" y="53" text-anchor="middle">vector</text>
+              <rect class="b-box" x="250" y="74" width="120" height="34" rx="7"/><text class="ts" x="310" y="95" text-anchor="middle">vector</text>
+              <rect class="b-box" x="250" y="116" width="120" height="34" rx="7"/><text class="ts" x="310" y="137" text-anchor="middle">5 × vector</text>
+              <rect class="b-box" x="250" y="158" width="120" height="34" rx="7"/><text class="ts" x="310" y="179" text-anchor="middle">1 vector por paso</text>
+              <rect class="b-box" x="250" y="200" width="120" height="34" rx="7"/><text class="ts" x="310" y="221" text-anchor="middle">palabras clave</text>
+              <rect class="b-box" x="250" y="242" width="120" height="34" rx="7"/><text class="ts" x="310" y="263" text-anchor="middle">vector</text>
+              <text class="ta" x="310" y="306" text-anchor="middle">recortan la memoria</text>
+            </g>
+            <line class="e" x1="222" y1="49" x2="248" y2="49" marker-end="url(#ah)"/>
+            <line class="e" x1="222" y1="91" x2="248" y2="91" marker-end="url(#ah)"/>
+            <line class="e" x1="222" y1="133" x2="248" y2="133" marker-end="url(#ah)"/>
+            <line class="e" x1="222" y1="175" x2="248" y2="175" marker-end="url(#ah)"/>
+            <line class="e" x1="222" y1="217" x2="248" y2="217" marker-end="url(#ah)"/>
+            <line class="e" x1="222" y1="259" x2="248" y2="259" marker-end="url(#ah)"/>
+            <path class="e" d="M370,49 C420,49 420,160 452,170"/>
+            <path class="e" d="M370,91 C415,91 420,165 452,172"/>
+            <path class="e" d="M370,133 C410,133 420,170 452,174"/>
+            <path class="e" d="M370,175 L452,176"/>
+            <path class="e" d="M370,217 C410,217 420,182 452,178"/>
+            <path class="e" d="M370,259 C415,259 420,186 452,180" marker-end="url(#ah)"/>
+            <rect class="b-acc" x="454" y="140" width="120" height="74" rx="9"/>
+            <text class="tb" x="514" y="170" text-anchor="middle">Fusión</text>
+            <text class="ta" x="514" y="188" text-anchor="middle">RRF + cuotas</text>
+            <line class="e" x1="574" y1="177" x2="606" y2="177" marker-end="url(#ah)"/>
+            <rect class="b-jev" x="608" y="140" width="104" height="74" rx="9"/>
+            <text class="tb" x="660" y="170" text-anchor="middle">≤ 30</text>
+            <text class="tj" x="660" y="188" text-anchor="middle">a JEV</text>
+            <text class="ts" x="454" y="246">La pregunta original</text>
+            <text class="ts" x="454" y="262">siempre entra, aunque el</text>
+            <text class="ts" x="454" y="278">kit se equivoque.</text>
+          </svg>
+        </div>
+        <figcaption>RRF (fusión por rangos) premia lo que aparece arriba en varios canales. Las cuotas garantizan que cada canal aporte al menos 2–3 candidatos, para que un concepto que solo una variante encontró no se pierda.</figcaption>
+      </figure>
+      <div class="io">
+        <div class="card"><h4>Por qué 5 variantes ayudan</h4><ul>
+          <li>Cada variante "aterriza" en una zona distinta de la memoria: lo legal, lo coloquial, la política interna, el procedimiento.</li>
+          <li>Un eslabón que no se parece a la pregunta puede parecerse a una variante.</li>
+          <li>Son embeddings: 5 vectores cuestan una fracción de centavo.</li>
+        </ul></div>
+        <div class="card"><h4>Cuidado</h4><ul>
+          <li>Más canales también traen más ruido. Por eso JEV sigue calificando: el pozo crece, pero JEV ordena.</li>
+          <li>Variantes muy parecidas no suman; se le pide diversidad al LLM y se mide.</li>
+          <li>El pasaje hipotético puede sesgar si el LLM "cree saber" la respuesta: es un canal más, nunca el único.</li>
+        </ul></div>
+      </div>
+      <p class="evid"><b>Evidencia:</b> en P1, buscar con la sub-pregunta del paso alcanzó el eslabón intermedio en <b>94%</b> de los casos contra <b>62%</b> con la pregunta sola; buscar por el nombre exacto de la entidad (palabras clave) también llegó a 94%. Las 5 variantes son la misma idea, sin necesitar la respuesta del paso anterior.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAPA 4 ================= -->
+<section id="capa4" aria-labelledby="c4h">
+  <div class="layer">
+    <div class="layer-no n-acc">4</div>
+    <div class="layer-body">
+      <div class="eyebrow">Capa 4</div>
+      <h2 id="c4h">El bucle con cuaderno</h2>
+      <div class="who"><span class="chip c-jev">decide JEV</span><span class="chip c-acc">código + cuaderno</span><span class="chip c-mid">1–5 rondas</span></div>
+      <p>Cada ronda: JEV califica los candidatos, lee las frases de los mejores, guarda las necesarias en el cuaderno y marca qué requisito cubren; el código arma la siguiente búsqueda solo con lo pendiente y propone "seguir leyendo" vecinos y referencias.</p>
+
+      <h3>Preguntas fijas (siempre, cualquier tema)</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Pregunta</th><th>Sobre qué</th><th>Para qué</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td><code>next_needed</code></td><td>pasaje + cuaderno</td><td>¿trae un dato que todavía falta?</td><td><span class="chip c-ok">probada · 0.87 AUC</span></td></tr>
+          <tr><td><code>answers_query</code></td><td>pasaje + cuaderno</td><td>¿con lo ya sabido da la respuesta final?</td><td><span class="chip c-ok">probada</span></td></tr>
+          <tr><td><code>needed_fact</code></td><td>una frase</td><td>¿esta frase va al cuaderno?</td><td><span class="chip c-ok">probada · 89%</span></td></tr>
+          <tr><td><code>covers</code></td><td>frase + requisitos</td><td>¿qué requisito cubre? (opción, "ninguno" al final)</td><td><span class="chip c-mid">nueva</span></td></tr>
+          <tr><td><code>expand_useful</code></td><td>adelanto de un vecino o referencia</td><td>¿vale la pena seguir leyendo esto?</td><td><span class="chip c-mid">nueva</span></td></tr>
+          <tr><td><code>instructs_reader</code></td><td>pasaje</td><td>¿trae instrucciones ocultas para la IA?</td><td><span class="chip c-mid">diseñada</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Preguntas a la medida (del kit, solo en investigación asistida)</h3>
+      <p>Se mandan <strong>en la misma llamada</strong> que las fijas, así que casi no suben el costo. Hacen que JEV juzgue con precisión: en vez de inferir "¿esto sirve?", responde algo literal ("¿establece cuántas faltas…?"), que es justo donde JEV es fuerte.</p>
+      <div class="codehead"><span class="eyebrow">State para calificar un pasaje (ronda 2)</span><span class="chip c-mid">≤ 2,500 caracteres</span></div>
+<pre class="code">{
+  <span class="k">"query"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización a un operador que faltó 3 días injustificados en el mes?"</span>,
+  <span class="k">"case"</span>: { <span class="s">"puesto"</span>: <span class="s">"operador de planta"</span>, <span class="s">"faltas"</span>: <span class="s">"3 en el mes, sin aviso"</span> },
+  <span class="k">"requirements"</span>: [                              <span class="c">// estado de cada parte</span>
+    { <span class="s">"id"</span>: <span class="s">"R1"</span>, <span class="s">"text"</span>: <span class="s">"causa legal que permite rescindir"</span>, <span class="s">"status"</span>: <span class="s">"covered"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R2"</span>, <span class="s">"text"</span>: <span class="s">"umbral de faltas y periodo"</span>,         <span class="s">"status"</span>: <span class="s">"covered"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R3"</span>, <span class="s">"text"</span>: <span class="s">"procedimiento o aviso obligatorio"</span>,  <span class="s">"status"</span>: <span class="s">"pending"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R4"</span>, <span class="s">"text"</span>: <span class="s">"excepciones o reglas internas"</span>,      <span class="s">"status"</span>: <span class="s">"pending"</span> }
+  ],
+  <span class="k">"known_facts"</span>: [                               <span class="c">// vista corta del cuaderno: ≤ 8 hechos</span>
+    { <span class="s">"text"</span>: <span class="s">"Son causas de rescisión… X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días, sin permiso del patrón o sin causa justificada."</span>,
+      <span class="s">"source"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › fracc. X"</span> }
+  ],
+  <span class="k">"passage"</span>: {
+    <span class="s">"title"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › párrafos finales"</span>,
+    <span class="s">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito en el que refiera claramente la conducta o conductas que motivan la rescisión y la fecha o fechas en que se cometieron…"</span>
+  }
+}</pre>
+      <p class="note">Ejemplo ilustrativo construido para explicar la estructura (no es una salida medida). Con <code>R1</code> y <code>R2</code> cubiertos, JEV debería dar alto <code>next_needed</code> y alto <code>q_R3</code> a este pasaje: trae el aviso, que es lo pendiente.</p>
+
+      <h3>El cuaderno v3</h3>
+      <div class="io">
+        <div class="card"><h4>Cada hecho guarda</h4>
+<pre class="code">{
+  <span class="s">"text"</span>: <span class="c">frase textual del documento</span>,
+  <span class="s">"source"</span>: <span class="c">ruta legible (Ley › Art. › fracc.)</span>,
+  <span class="s">"doc"</span>, <span class="s">"chunk"</span>, <span class="s">"char_start"</span>, <span class="s">"char_end"</span>,
+  <span class="s">"via"</span>: <span class="c">search | variant | step | next | ref</span>,
+  <span class="s">"round"</span>, <span class="s">"from"</span>: <span class="c">qué lo trajo</span>,
+  <span class="s">"confidence"</span>: <span class="c">≤ la del hecho que lo originó</span>,
+  <span class="s">"covers"</span>: [<span class="s">"R2"</span>]
+}</pre></div>
+        <div class="card"><h4>El cuaderno completo lleva</h4><ul>
+          <li><b>requisitos</b> con estado: cubierto, pendiente, en conflicto.</li>
+          <li><b>conflictos</b>: dos hechos con números o fechas distintos para lo mismo (los detecta el código, no JEV).</li>
+          <li><b>pendientes</b>: referencias citadas que aún no se leen ("ver art. 40").</li>
+          <li><b>pasos</b> del kit con sus huecos llenados: cuando un hecho cubre el paso 1, el código rellena <code>{1}</code> con esa frase y busca el paso 2.</li>
+        </ul></div>
+      </div>
+
+      <h3>Qué busca cada ronda</h3>
+      <ol>
+        <li><b>Por hecho nuevo</b>: "fuente: frase" (con el título, para no perder de quién habla).</li>
+        <li><b>Por requisito pendiente</b>: su texto + su pregunta a la medida.</li>
+        <li><b>Por paso</b>: el siguiente paso con sus huecos ya llenados.</li>
+        <li><b>Seguir leyendo</b>: siguiente, anterior, padre o referencia citada; JEV decide con <code>expand_useful</code> sobre un adelanto de 300 caracteres.</li>
+      </ol>
+      <div class="io">
+        <div class="card"><h4>Paradas</h4><ul>
+          <li>Todos los requisitos cubiertos → cierre.</li>
+          <li>Dos rondas sin hechos nuevos → cierre.</li>
+          <li>Presupuesto: 5 rondas, ~110 llamadas JEV, 40,000 caracteres leídos, 8 fragmentos por documento.</li>
+        </ul></div>
+        <div class="card"><h4>Contra errores que se arrastran</h4><ul>
+          <li>Confianza heredada acotada.</li>
+          <li>Si dos hechos compiten con dudas parecidas, dos cuadernos por una ronda y se queda el que cubre más.</li>
+          <li>Números y fechas comparados en código.</li>
+          <li>Lectura final: antes de cerrar, JEV lee las frases de los 5 mejores pasajes con el cuaderno completo.</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CAPA 5 ================= -->
+<section id="capa5" aria-labelledby="c5h">
+  <div class="layer">
+    <div class="layer-no n-jev">5</div>
+    <div class="layer-body">
+      <div class="eyebrow">Capa 5</div>
+      <h2 id="c5h">Cierre: ¿se resolvió lo pedido?</h2>
+      <div class="who"><span class="chip c-jev">decide JEV</span><span class="chip c-mid">1 llamada</span></div>
+      <div class="codehead"><span class="eyebrow">State del cierre</span></div>
+<pre class="code">{
+  <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"case"</span>: { … },
+  <span class="k">"requirements"</span>: [ … con su estado … ],
+  <span class="k">"known_facts"</span>: [ … el cuaderno completo, ≤ 12 hechos … ],
+  <span class="k">"conflicts"</span>: [ ]
+}</pre>
+      <div class="io">
+        <div class="card"><h4>Preguntas fijas</h4><ul>
+          <li><code>answer_stated</code>: ¿los hechos, encadenados, dan la respuesta final?</li>
+          <li><code>missing_link</code>: ¿queda algo de la pregunta sin identificar?</li>
+          <li><code>applies_to_case</code>: ¿lo encontrado aplica al caso concreto?</li>
+          <li><code>worth_another_round</code>: ¿hay pistas sin seguir (referencias, pasos pendientes)?</li>
+        </ul></div>
+        <div class="card"><h4>Preguntas del kit</h4><ul>
+          <li>Una por requisito: "¿<code>known_facts</code> establece el procedimiento de aviso?"</li>
+          <li>Las <code>closing_questions</code>, por ejemplo: "¿los hechos aplican a un operador con 3 faltas?"</li>
+        </ul></div>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Si JEV dice…</th><th>Entonces</th></tr></thead>
+        <tbody>
+          <tr><td>Todo cubierto, aplica al caso, sin conflictos</td><td><span class="chip c-ok">entrega</span></td></tr>
+          <tr><td>Falta algo y hay pistas sin seguir</td><td><span class="chip c-mid">otra ronda</span> (si venía de "simple", escala a la capa 2)</td></tr>
+          <tr><td>Falta un requisito y ya no hay qué buscar</td><td><span class="chip c-no">no hay evidencia de R…</span></td></tr>
+          <tr><td>Hay conflicto entre documentos</td><td><span class="chip c-ok">entrega</span> con el conflicto marcado (el agente lo explica)</td></tr>
+          <tr><td>La respuesta depende de un dato del caso que nadie dio</td><td><span class="chip c-mid">pedir aclaración</span></td></tr>
+        </tbody>
+      </table></div>
+      <p class="evid"><b>Evidencia:</b> la abstención llegó a 0.849 y combinar las señales actuales no pasa de ahí. Los requisitos aportan información nueva: en vez de "¿alcanza?" en general, JEV verifica cada parte.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SALIDA ================= -->
+<section id="salida" aria-labelledby="sh">
+  <h2 id="sh">Lo que recibe el agente</h2>
+  <p>El agente escribe la respuesta al usuario, pero solo con lo que viene aquí, y cita cada afirmación.</p>
+<pre class="code">{
+  <span class="k">"status"</span>: <span class="s">"answered"</span>,                          <span class="c">// answered | partial | no_evidence | needs_clarification</span>
+  <span class="k">"facts"</span>: [
+    { <span class="s">"text"</span>: <span class="s">"…X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días, sin permiso del patrón o sin causa justificada."</span>,
+      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › fracc. X"</span>, <span class="s">"covers"</span>: [<span class="s">"R1"</span>, <span class="s">"R2"</span>], <span class="s">"confidence"</span>: 0.91 },
+    { <span class="s">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito…"</span>,
+      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › párrafos finales"</span>, <span class="s">"covers"</span>: [<span class="s">"R3"</span>], <span class="s">"confidence"</span>: 0.88 }
+  ],
+  <span class="k">"coverage"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>, <span class="s">"R3"</span>: <span class="s">"covered"</span>, <span class="s">"R4"</span>: <span class="s">"not_found"</span> },
+  <span class="k">"gaps"</span>: [<span class="s">"R4: no se encontró política interna de ausentismo"</span>],
+  <span class="k">"notes"</span>: [<span class="s">"El caso tiene 3 faltas; el umbral legal es 'más de tres' en 30 días."</span>],
+  <span class="k">"conflicts"</span>: []
+}</pre>
+  <p class="note">En este ejemplo, la nota del final es la que importa para el usuario: con exactamente 3 faltas <b>no</b> se cumple "más de tres". Esa lectura la hace el agente; la memoria le entrega la frase exacta y el dato del caso para que no se equivoque. Ejemplo ilustrativo.</p>
+</section>
+
+<!-- ================= EJEMPLOS ================= -->
+<section id="ejemplos" aria-labelledby="eh">
+  <h2 id="eh">Tres recorridos</h2>
+  <div class="io">
+    <div class="card">
+      <div class="eyebrow">A · modo directo</div>
+      <h4>"Gracias, ¿me puedes resumir lo que hablamos?"</h4>
+      <p>Triaje: <code>conversation</code> 0.96 → responde el LLM. Costo: 1 llamada JEV. No se toca la memoria.</p>
+    </div>
+    <div class="card">
+      <div class="eyebrow">B · modo simple</div>
+      <h4>"¿Cuántos días de vacaciones corresponden en el primer año según la LFT?"</h4>
+      <p>Triaje: <code>lookup</code> alto, autocontenida, un paso → 1 búsqueda + JEV califica 30 → cierre: <code>answer_stated</code> alto → entrega. Sin LLM. ~US$0.001. Así se comportaba KoBLEX: una pasada bastaba.</p>
+    </div>
+    <div class="card">
+      <div class="eyebrow">C · investigación asistida</div>
+      <h4>"¿Lo podemos correr sin pagarle?" (con contexto)</h4>
+      <p>Triaje: no autocontenida, con condiciones → capa 2 pide reescritura, pasos, vocabulario y requisitos → 5 variantes + pasos + términos → 2 rondas → cierre con R4 sin encontrar → entrega parcial con el hueco marcado.</p>
+    </div>
+  </div>
+  <h3>Recorrido real medido (MuSiQue): el ejemplo de Coolidge</h3>
+  <div class="steps">
+    <div class="step"><div><h4>Pregunta</h4><p>"¿Dónde nació el presidente nacido un 4 de julio?" Con el diseño v3, el triaje la marcaría <code>multi_step</code>.</p></div></div>
+    <div class="step"><div><h4>Ronda 1</h4><p>La búsqueda trae "Día de la Independencia". JEV escoge: <em>"Calvin Coolidge, the 30th President, was born on July 4, 1872"</em>. Va al cuaderno y cubre el paso 1.</p></div></div>
+    <div class="step"><div><h4>Ronda 2</h4><p>El código busca con "Calvin Coolidge" (el hueco del paso 2 ya lleno) y aparece "Plymouth Notch Cemetery", el eslabón que la búsqueda simple dejaba en el puesto 14.</p></div></div>
+    <div class="step"><div><h4>Resultado medido</h4><p>Los dos documentos quedan en los puestos 1 y 4: cadena completa. En el v3, el kit podría haber traído además una variante "presidente de EE. UU. nacido el Día de la Independencia", que acerca el documento 1 desde la ronda 1.</p></div></div>
+  </div>
+</section>
+
+<!-- ================= POR QUÉ ================= -->
+<section id="porque" aria-labelledby="ph">
+  <h2 id="ph">Por qué debería funcionar mejor</h2>
+  <p>Cada pieza responde a algo que ya medimos. Las marcadas como "hipótesis" son las que faltan probar.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Pieza del v3</th><th>Qué problema medido ataca</th><th>Dato</th><th>Estado</th></tr></thead>
+    <tbody>
+      <tr><td>Triaje (capa 1)</td><td>El bucle cuesta 2.8× en leyes sin ganar</td><td class="num">leyes: bucle 80% vs una pasada 83%</td><td><span class="chip c-mid">hipótesis</span></td></tr>
+      <tr><td>Cuaderno en el state</td><td>JEV aislado ordena peor que la búsqueda</td><td class="num">AUC 0.79 → 0.87</td><td><span class="chip c-ok">medido</span></td></tr>
+      <tr><td>JEV escoge frases</td><td>Heurísticas eligen mal la frase clave</td><td class="num">89% vs 66–68%</td><td><span class="chip c-ok">medido</span></td></tr>
+      <tr><td>Bucle por rondas</td><td>Eslabones que no se parecen a la pregunta</td><td class="num">cadena 73% → 83%</td><td><span class="chip c-ok">medido</span></td></tr>
+      <tr><td>Pasos y variantes (capa 3)</td><td>Un solo punto de entrada no alcanza los eslabones</td><td class="num">alcance 62% → 94% con sub-pregunta</td><td><span class="chip c-mid">techo medido; LLM por probar</span></td></tr>
+      <tr><td>Preguntas a la medida para JEV</td><td>JEV lee literal y tropieza con lo indirecto</td><td class="num">un reordenador genérico bajó a 63%</td><td><span class="chip c-mid">hipótesis</span></td></tr>
+      <tr><td>Requisitos + cierre</td><td>Abstención estancada</td><td class="num">0.849 (meta 0.85)</td><td><span class="chip c-mid">hipótesis</span></td></tr>
+      <tr><td>Lectura final</td><td>El dato está en el top 10 pero no en el cuaderno</td><td class="num">92% vs 57%</td><td><span class="chip c-mid">hipótesis</span></td></tr>
+      <tr><td>Partición + seguir leyendo</td><td>Documentos largos cortados</td><td class="num">742 artículos &gt; 6,000 caracteres</td><td><span class="chip c-mid">hipótesis</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================= RIESGOS ================= -->
+<section id="riesgos" aria-labelledby="rh">
+  <h2 id="rh">Detalles que se pueden pasar</h2>
+  <p class="risk"><b>El LLM "sabe de más".</b> Puede meter la respuesta en las variantes o en el pasaje hipotético (lo vimos en la prueba de 2 preguntas: escribió "Hengdian" y "Zhejiang" sin buscar). En documentos privados puede inventar un artículo. Mitigación: la pregunta original siempre entra, nada del kit es evidencia, y se mide con el LLM "a ciegas".</p>
+  <p class="risk"><b>Preguntas a la medida que traen la respuesta.</b> "¿Dice que son 3 faltas?" sesga a JEV. Regla: preguntar por el tipo de dato, no por el valor; el código rechaza preguntas que contengan cifras o nombres que no estén en la entrada.</p>
+  <p class="risk"><b>Errores del triaje.</b> Si clasifica como "directo" algo que necesitaba documentos, el LLM puede inventar. Mitigación: umbral conservador; en temas sensibles, mínimo "simple"; registro para revisar.</p>
+  <p class="risk"><b>Ruido de muchos canales.</b> 5 variantes + pasos + términos pueden llenar el pozo de cosas parecidas. Mitigación: cuotas por canal, quitar duplicados, JEV ordena.</p>
+  <p class="risk"><b>Latencia.</b> Triaje + LLM + rondas suman segundos. Mitigación: en paralelo lo que se pueda (embeddings, llamadas JEV por lote); modo simple como camino rápido.</p>
+  <p class="risk"><b>Privacidad y permisos.</b> El LLM ve la conversación; la memoria solo debe buscar en documentos que el usuario puede ver, y la caché de JEV no debe cruzar usuarios.</p>
+  <p class="risk"><b>Instrucciones ocultas en documentos.</b> Un texto que diga "ignora lo anterior" no debe entrar al cuaderno: <code>instructs_reader</code> lo marca y se descarta como hecho.</p>
+  <p class="risk"><b>JEV no es del todo determinista.</b> Diferencias de hasta 0.09 en respuestas repetidas. Los umbrales deben tener margen y medirse con repeticiones.</p>
+</section>
+
+<!-- ================= VALIDAR ================= -->
+<section id="validar" aria-labelledby="vh">
+  <h2 id="vh">Cómo validarlo, en orden</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>Prueba</th><th>Pregunta que responde</th><th>Costo</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>Triaje</td><td>¿JEV distingue "una pasada basta" de "hay que investigar"? (sabemos la respuesta en MuSiQue y KoBLEX)</td><td class="num">~US$0.01 JEV</td></tr>
+      <tr><td class="num">2</td><td>Puntos de entrada</td><td>¿5 variantes + pasos + términos del LLM "a ciegas" traen más documentos correctos que la pregunta sola?</td><td class="num">centavos Gemini · $0 JEV</td></tr>
+      <tr><td class="num">3</td><td>Preguntas a la medida</td><td>¿JEV reconoce mejor el eslabón con preguntas del kit que con las fijas? (banco P1)</td><td class="num">~US$0.05 JEV</td></tr>
+      <tr><td class="num">4</td><td>Requisitos y cierre</td><td>¿La abstención supera 0.85 con verificación por requisito?</td><td class="num">~US$0.05 JEV</td></tr>
+      <tr><td class="num">5</td><td>v3 completo, pre-registrado</td><td>¿Cumple las 4 metas en MuSiQue nuevo y en leyes?</td><td class="num">~US$0.6 JEV</td></tr>
+      <tr><td class="num">6</td><td>Tus documentos en español</td><td>Mini-conversaciones reales: contexto incompleto, casos, preguntas sin respuesta</td><td class="num">~US$0.3 JEV</td></tr>
+    </tbody>
+  </table></div>
+  <p>Metas del v3: respuesta en el cuaderno ≥ 80% (hoy 57%); leyes con costo ≤ 1.2× la pasada simple sin perder calidad; MuSiQue ≥ 83% de cadenas completas; abstención ≥ 0.85.</p>
+</section>
+
+<footer>Basado en los resultados de <span class="mono">plan.md</span> §17–30 y en las revisiones de <span class="mono">docs/review/</span>. Los ejemplos de leyes mexicanas son ilustrativos (no salen de una corrida); el ejemplo de Coolidge y todas las cifras de la tabla "Por qué" son mediciones reales del proyecto.</footer>
+</main>
