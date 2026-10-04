@@ -81,6 +81,10 @@ type config struct {
 	musiqueSplit     string
 	musiqueSalt      string
 	abstain          bool
+	briefProbe       bool
+	briefN           int
+	briefVariants    string
+	briefMaxUSD      float64
 	abstainThreshold float64
 	exVariants       string
 	rerankURL        string
@@ -102,6 +106,10 @@ func parseFlags() config {
 	flag.IntVar(&c.option, "option", 1, "retrieval option 1..5 (see plan.md section 6)")
 	flag.StringVar(&c.dataset, "dataset", "koblex", "benchmark: koblex (statutes, explicit citations) or musique (Wikipedia paragraphs, inferred links, unanswerable questions)")
 	flag.StringVar(&c.musiqueSplit, "musique-split", "validation", "musique: split the memory is built from; train = fresh questions never used for tuning")
+	flag.BoolVar(&c.briefProbe, "brief-probe", false, "simulate the calling agent's search brief with Gemini (--llm-model) and measure each channel's reach on the answerable questions of --mode (no JEV), then exit")
+	flag.IntVar(&c.briefN, "brief-n", 70, "--brief-probe: questions used (multi-hop first)")
+	flag.StringVar(&c.briefVariants, "brief-variants", "knowledge,blind", "--brief-probe: knowledge (agent may use what it knows) and/or blind (private documents)")
+	flag.Float64Var(&c.briefMaxUSD, "brief-max-usd", 0.30, "--brief-probe: stop generating briefs past this Gemini spend")
 	flag.BoolVar(&c.abstain, "abstain", false, "plan v2 Phase 3: run the notebook loop on every question of --mode and decide abstention from the notebook, then exit")
 	flag.Float64Var(&c.abstainThreshold, "abstain-threshold", 0.5, "--abstain: answer when the primary signal ≥ this (chosen on dev: 0.31, plan §26)")
 	flag.StringVar(&c.musiqueSalt, "musique-salt", "", "musique: salt of the question sampling hash; a new salt draws a different memory (empty = the original draw)")
@@ -267,6 +275,9 @@ func run(ctx context.Context, cfg config) error {
 	}
 	if cfg.notebookProbe {
 		return runNotebookProbe(ctx, cfg, bench, qEmb, querySpace)
+	}
+	if cfg.briefProbe {
+		return runBriefProbe(ctx, cfg, bench, qs, qEmb, querySpace)
 	}
 	if cfg.abstain {
 		return runAbstain(ctx, cfg, bench, qs, qEmb, querySpace)

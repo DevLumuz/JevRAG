@@ -24,6 +24,7 @@ type Options struct {
 type Gemini struct {
 	client *genai.Client
 	model  string
+	low    bool // the model rejects minimal thinking; use low
 }
 
 // NewGemini creates a generator using the GEMINI_API_KEY env var.
@@ -56,6 +57,8 @@ func (g *Gemini) config(schema map[string]any) *genai.GenerateContentConfig {
 	if strings.HasPrefix(g.model, "gemini-2") {
 		budget := int32(0)
 		cfg.ThinkingConfig = &genai.ThinkingConfig{ThinkingBudget: &budget}
+	} else if g.low {
+		cfg.ThinkingConfig = &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelLow}
 	} else {
 		cfg.ThinkingConfig = &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelMinimal}
 	}
@@ -80,6 +83,10 @@ func (g *Gemini) GenerateJSON(ctx context.Context, prompt string, schema map[str
 				return "", in, out, errors.New("llm: empty response")
 			}
 			return text, in, out, nil
+		}
+		if !g.low && strings.Contains(err.Error(), "MINIMAL is not supported") {
+			g.low = true // fall back once to the lowest level the model accepts
+			continue
 		}
 		if !retryable(err) || attempt >= 5 {
 			return "", 0, 0, err
