@@ -89,6 +89,8 @@ pre .k { color: var(--jev); } pre .s { color: var(--accent); } pre .n { color: v
 .choice.taken { border: 2px solid var(--good); background: var(--good-soft); }
 .choice.taken b::before { content: "✓ "; color: var(--good); }
 .choice.ghost { opacity: 0.55; border-style: dashed; }
+pre.logic { background: var(--accent-soft); border: 1px dashed var(--accent); }
+.cap.logic-cap { color: var(--accent); }
 .summary { margin-top: 26px; display: grid; gap: 10px; }
 .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.9rem; }
@@ -169,7 +171,8 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
   },
   <span class="k">"usage"</span>: { <span class="s">"input_tokens"</span>: <span class="n">612</span> }
 }</pre>
-<pre><span class="c">código: needs_memory 0.88 → investigar
+<span class="cap logic-cap">código · regla fija, no es respuesta de JEV</span>
+<pre class="logic"><span class="c">needs_memory 0.88 → investigar
 señales: self_contained 0.07 (depende del chat), has_conditions 0.91 (trae caso)</span></pre></div>
   </div>
 </div>
@@ -212,7 +215,8 @@ señales: self_contained 0.07 (depende del chat), has_conditions 0.91 (trae caso
     <span class="k">"needs_checklist"</span>:  { <span class="s">"noul"</span>: <span class="n">0.79</span> }
   }
 }</pre>
-<pre><span class="c">código: piezas = standalone, case, variants, terms,
+<span class="cap logic-cap">código · regla fija, no es respuesta de JEV</span>
+<pre class="logic"><span class="c">piezas = standalone, case, variants, terms,
         requirements, jev_questions   (steps no: 0.31)</span></pre></div>
   </div>
 </div>
@@ -339,7 +343,8 @@ señales: self_contained 0.07 (depende del chat), has_conditions 0.91 (trae caso
     <span class="k">"q_R4"</span>: { <span class="s">"noul"</span>: <span class="n">0.03</span> }
   }
 }</pre>
-<pre><span class="c">orden final de la ronda: Art. 47 fracc. X (0.93), Art. 47 encabezado (0.88),
+<span class="cap logic-cap">código · ordena por los números de JEV</span>
+<pre class="logic"><span class="c">orden final de la ronda: Art. 47 fracc. X (0.93), Art. 47 encabezado (0.88),
 Reglamento interior Cap. 5 (0.62), Art. 48 (0.35) …
 → JEV lee las frases de los 3 mejores</span></pre></div>
   </div>
@@ -350,7 +355,17 @@ Reglamento interior Cap. 5 (0.62), Art. 48 (0.35) …
 <!-- 6 JEV SENTENCES + NOTEBOOK -->
 <div class="node jev">
   <div class="nhead"><h3><span class="tag t-jev">JEV · llamadas 33–41</span> Elegir frases → cuaderno</h3><span class="cost">JEV 41 · ~US$0.0016</span></div>
-  <p class="why"><b>Qué decide:</b> qué frase textual entra al cuaderno y qué requisito cubre. El código guarda la frase con su cita exacta.</p>
+  <p class="why"><b>Cómo se extrae una frase (JEV no recorta ni reescribe nada):</b> (1) el <b>código</b> parte cada uno de los 3 mejores pasajes en frases (reglas de puntuación, abreviaturas, incisos), y a cada inciso le pega la frase que lo introduce; (2) <b>JEV</b> recibe <b>una frase a la vez</b> y responde dos preguntas cerradas: <code>needed_fact</code> (¿es un dato que hace falta? → probabilidad) y <code>covers</code> (¿qué requisito cubre? → elige R1…R4 o "none"); (3) el <b>código</b> guarda las frases con probabilidad ≥ 0.5 (máximo 2 por pasaje), copiadas tal cual, con su rango de caracteres en el documento.</p>
+  <span class="cap">ejemplo: las frases del pasaje "LFT › Art. 47 › fracc. X" y lo que respondió JEV</span>
+<pre>[
+  { <span class="k">"sentence"</span>: <span class="s">"Son causas de rescisión de la relación de trabajo, sin responsabilidad para el patrón:"</span>,
+    <span class="k">"needed_fact"</span>: <span class="n">0.90</span>, <span class="k">"covers"</span>: <span class="s">"R1"</span> },                     <span class="c">// la frase que introduce el inciso</span>
+  { <span class="k">"sentence"</span>: <span class="s">"IX. Revelar el trabajador los secretos de fabricación…"</span>,
+    <span class="k">"needed_fact"</span>: <span class="n">0.04</span>, <span class="k">"covers"</span>: <span class="s">"none"</span> },                   <span class="c">// otro inciso, no sirve</span>
+  { <span class="k">"sentence"</span>: <span class="s">"X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días…"</span>,
+    <span class="k">"needed_fact"</span>: <span class="n">0.95</span>, <span class="k">"covers"</span>: <span class="s">"R2"</span> }
+]
+<span class="c">→ entran la 1ª y la 3ª, con "chars": [inicio, fin] dentro del documento</span></pre>
   <div class="io">
     <div><span class="cap">envía (una frase)</span>
 <pre>{
@@ -397,28 +412,35 @@ JEV no tomó ninguna frase de ahí para R4.</span></pre></div>
   <span class="k">"state"</span>: {
     <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"case"</span>: { … },
     <span class="k">"requirements"</span>: [ <span class="c">R1 covered, R2 covered, R3 pending, R4 pending</span> ],
-    <span class="k">"known_facts"</span>: [ <span class="c">las 2 frases del cuaderno</span> ],
-    <span class="k">"unfollowed_leads"</span>: []        <span class="c">// referencias citadas sin leer, pasos listos</span>
+    <span class="k">"known_facts"</span>: [ <span class="c">las 2 frases del cuaderno</span> ]
   },
   <span class="k">"questions"</span>: {
-    <span class="k">"answer_stated"</span>: {…}, <span class="k">"missing_link"</span>: {…},
-    <span class="k">"applies_to_case"</span>: {…}, <span class="k">"worth_another_round"</span>: {…},
-    <span class="k">"user_must_clarify"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
-      <span class="s">"¿Lo que falta es un dato del caso que solo el usuario sabe?"</span> }
+    <span class="k">"answer_stated"</span>:   { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`known_facts`, encadenados, dan la respuesta a `query`?"</span> },
+    <span class="k">"missing_link"</span>:    { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Queda algo de `query` que ningún hecho identifica?"</span> },
+    <span class="k">"applies_to_case"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Lo que dicen los hechos aplica a `case`?"</span> },
+    <span class="k">"contradiction"</span>:   { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Dos hechos de `known_facts` dicen cosas incompatibles?"</span> },
+    <span class="k">"needs_context"</span>:   { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿Lo que falta depende de datos sobre la situación de quien pregunta (su caso, rol, fechas, lugar…) y no de lo que dicen los documentos?"</span> },
+    <span class="k">"cov_R3"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`known_facts` establece un aviso o procedimiento al rescindir?"</span> },
+    <span class="k">"cov_R4"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>: <span class="s">"¿`known_facts` establece una regla interna sobre ausencias?"</span> }
   }
-}</pre></div>
+}</pre>
+<span class="cap logic-cap">código · pistas (lo sabe el código, no se le pregunta a JEV)</span>
+<pre class="logic"><span class="c">referencias citadas sin leer: 0 · pasos con hueco listo: 0</span></pre></div>
     <div><span class="cap">recibe</span>
 <pre>{
   <span class="k">"answers"</span>: {
-    <span class="k">"answer_stated"</span>:       { <span class="s">"noul"</span>: <span class="n">0.38</span> },
-    <span class="k">"missing_link"</span>:        { <span class="s">"noul"</span>: <span class="n">0.84</span> },
-    <span class="k">"applies_to_case"</span>:     { <span class="s">"noul"</span>: <span class="n">0.81</span> },
-    <span class="k">"worth_another_round"</span>: { <span class="s">"noul"</span>: <span class="n">0.22</span> },
-    <span class="k">"user_must_clarify"</span>:   { <span class="s">"noul"</span>: <span class="n">0.10</span> }
+    <span class="k">"answer_stated"</span>:   { <span class="s">"noul"</span>: <span class="n">0.38</span> },
+    <span class="k">"missing_link"</span>:    { <span class="s">"noul"</span>: <span class="n">0.84</span> },
+    <span class="k">"applies_to_case"</span>: { <span class="s">"noul"</span>: <span class="n">0.81</span> },
+    <span class="k">"contradiction"</span>:   { <span class="s">"noul"</span>: <span class="n">0.05</span> },
+    <span class="k">"needs_context"</span>:   { <span class="s">"noul"</span>: <span class="n">0.10</span> },
+    <span class="k">"cov_R3"</span>: { <span class="s">"noul"</span>: <span class="n">0.06</span> },
+    <span class="k">"cov_R4"</span>: { <span class="s">"noul"</span>: <span class="n">0.04</span> }
   }
 }</pre>
-<pre><span class="c">código: falta R3 y R4; no hay pistas sin seguir (0.22);
-el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigido (momento B)</span></pre></div>
+<span class="cap logic-cap">código · regla fija, no es respuesta de JEV</span>
+<pre class="logic"><span class="c">no resuelto (0.38) · faltan R3 y R4 · sin pistas · no es falta de contexto (0.10)
+sin kit dirigido todavía → pedir kit dirigido (momento B)</span></pre></div>
   </div>
 </div>
 
@@ -426,10 +448,10 @@ el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigi
   <div class="forkbar"><div class="bar"></div></div>
   <div class="choices">
     <div class="choice ghost"><b>Entregar</b><span>no: answer_stated 0.38</span></div>
-    <div class="choice ghost"><b>Otra ronda, sin LLM</b><span>no: no hay pistas que seguir</span></div>
+    <div class="choice ghost"><b>Otra ronda, sin LLM</b><span>no: el código no tiene pistas que seguir</span></div>
     <div class="choice taken"><b>Kit dirigido (momento B)</b><span>falta algo y no hay pistas: pedir búsquedas para el hueco</span></div>
     <div class="choice ghost"><b>No hay evidencia</b><span>todavía no: queda un intento dirigido</span></div>
-    <div class="choice ghost"><b>Pedir aclaración</b><span>no: user_must_clarify 0.10</span></div>
+    <div class="choice ghost"><b>Falta contexto</b><span>no: needs_context 0.10 (lo que falta está en documentos, no en el caso)</span></div>
   </div>
 </div>
 
@@ -438,7 +460,7 @@ el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigi
 <!-- 8 LLM KIT B -->
 <div class="node llm">
   <div class="nhead"><h3><span class="tag t-llm">LLM · llamada 2</span> Kit dirigido al hueco</h3><span class="cost">LLM 2 · ~US$0.004</span></div>
-  <p class="why"><b>Qué hace:</b> ya no escribe material genérico. Sabe qué se encontró y qué falta, y escribe variantes y términos solo para R3 y R4. Se pide una sola vez: si tras esto sigue faltando, la memoria probablemente no lo tiene.</p>
+  <p class="why"><b>Qué hace:</b> ya no escribe material genérico. Recibe lo que se encontró (solo las frases del cuaderno y sus citas, no los documentos), lo que falta, <b>lo que ya se intentó</b> y los títulos de lo que apareció pero no sirvió, y escribe búsquedas <b>con otro enfoque</b> para R3 y R4. Se pide una sola vez: si tras esto sigue faltando, la memoria probablemente no lo tiene.</p>
   <div class="io">
     <div><span class="cap">envía</span>
 <pre>{
@@ -454,7 +476,22 @@ el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigi
     <span class="s">"R3: aviso o procedimiento obligatorio al rescindir"</span>,
     <span class="s">"R4: reglas internas sobre ausencias"</span>
   ],
-  <span class="k">"pieces"</span>: [<span class="s">"variants"</span>, <span class="s">"terms"</span>]
+  <span class="k">"already_tried"</span>: [
+    <span class="s">"causales de rescisión laboral por inasistencias"</span>,
+    <span class="s">"despido justificado por faltas sin permiso del patrón"</span>,
+    <span class="s">"número de faltas que permite terminar sin indemnizar"</span>,
+    <span class="s">"política interna de ausentismo y sanciones"</span>,
+    <span class="s">"terminación de la relación de trabajo sin responsabilidad"</span>,
+    <span class="c">… y los términos del primer kit</span>
+  ],
+  <span class="k">"found_but_not_useful"</span>: [
+    <span class="s">"Reglamento interior › Cap. 5 › Puntualidad"</span>, <span class="s">"LFT › Art. 48"</span>
+  ],
+  <span class="k">"pieces"</span>: [<span class="s">"variants"</span>, <span class="s">"terms"</span>],
+  <span class="k">"instructions"</span>: <span class="s">"Escribe 5 búsquedas nuevas para lo que falta con un enfoque distinto a
+    already_tried: otro vocabulario, otro tipo de documento (reglamento, formato,
+    procedimiento interno), términos más generales y más específicos, y cómo se
+    titularía la sección que lo contiene. No repitas ni parafrasees lo ya intentado."</span>
 }</pre></div>
     <div><span class="cap">recibe</span>
 <pre>{
@@ -467,7 +504,14 @@ el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigi
   ],
   <span class="k">"terms"</span>: [<span class="s">"aviso de rescisión"</span>, <span class="s">"aviso escrito"</span>, <span class="s">"notificación"</span>,
             <span class="s">"medidas disciplinarias"</span>, <span class="s">"reglamento interior"</span>]
-}</pre></div>
+}</pre>
+<span class="cap logic-cap">código · filtro de variantes repetidas (embeddings)</span>
+<pre class="logic"><span class="c">similitud de cada variante nueva contra las ya intentadas:
+  "aviso escrito al trabajador…"          0.61  ✓ se usa
+  "plazo para entregar… el aviso"         0.58  ✓
+  "efecto de no dar aviso…"               0.55  ✓
+  "procedimiento interno de RH…"          0.72  ✓
+  "reglamento interior: faltas… "         0.93  ✗ casi igual a "política interna de ausentismo" → se descarta</span></pre></div>
   </div>
 </div>
 
@@ -518,15 +562,17 @@ nada sobre faltas. R4 sigue pendiente.</span></pre></div>
     <div><span class="cap">recibe</span>
 <pre>{
   <span class="k">"answers"</span>: {
-    <span class="k">"answer_stated"</span>:       { <span class="s">"noul"</span>: <span class="n">0.86</span> },
-    <span class="k">"missing_link"</span>:        { <span class="s">"noul"</span>: <span class="n">0.27</span> },
-    <span class="k">"applies_to_case"</span>:     { <span class="s">"noul"</span>: <span class="n">0.88</span> },
-    <span class="k">"worth_another_round"</span>: { <span class="s">"noul"</span>: <span class="n">0.11</span> },
-    <span class="k">"user_must_clarify"</span>:   { <span class="s">"noul"</span>: <span class="n">0.14</span> }
+    <span class="k">"answer_stated"</span>:   { <span class="s">"noul"</span>: <span class="n">0.86</span> },
+    <span class="k">"missing_link"</span>:    { <span class="s">"noul"</span>: <span class="n">0.27</span> },
+    <span class="k">"applies_to_case"</span>: { <span class="s">"noul"</span>: <span class="n">0.88</span> },
+    <span class="k">"contradiction"</span>:   { <span class="s">"noul"</span>: <span class="n">0.04</span> },
+    <span class="k">"needs_context"</span>:   { <span class="s">"noul"</span>: <span class="n">0.14</span> },
+    <span class="k">"cov_R3"</span>: { <span class="s">"noul"</span>: <span class="n">0.93</span> },
+    <span class="k">"cov_R4"</span>: { <span class="s">"noul"</span>: <span class="n">0.05</span> }
   }
 }</pre></div>
-    <div><span class="cap">código</span>
-<pre><span class="c">R1–R3 cubiertos · R4 sin encontrar · kit dirigido ya usado · sin pistas
+    <div><span class="cap logic-cap">código · regla fija, no es respuesta de JEV</span>
+<pre class="logic"><span class="c">resuelto (0.86) · R1–R3 cubiertos · R4 sin encontrar · kit dirigido ya usado · sin pistas
 → entregar con estado "partial" y R4 como hueco</span></pre></div>
   </div>
 </div>
@@ -535,9 +581,9 @@ nada sobre faltas. R4 sigue pendiente.</span></pre></div>
   <div class="forkbar"><div class="bar"></div></div>
   <div class="choices">
     <div class="choice taken"><b>Entregar (parcial)</b><span>lo esencial cubierto; R4 marcado como hueco</span></div>
-    <div class="choice ghost"><b>Otra ronda</b><span>no: worth_another_round 0.11</span></div>
+    <div class="choice ghost"><b>Otra ronda</b><span>no: el código no tiene pistas que seguir</span></div>
     <div class="choice ghost"><b>Otro kit</b><span>no: el kit dirigido se pide una sola vez</span></div>
-    <div class="choice ghost"><b>Pedir aclaración</b><span>no: user_must_clarify 0.14</span></div>
+    <div class="choice ghost"><b>Falta contexto</b><span>no: needs_context 0.14</span></div>
   </div>
 </div>
 
@@ -546,20 +592,21 @@ nada sobre faltas. R4 sigue pendiente.</span></pre></div>
 <!-- 11 OUTPUT -->
 <div class="node out">
   <div class="nhead"><h3><span class="tag t-out">salida</span> Lo que recibe el agente</h3><span class="cost">total: JEV 81 · LLM 2 · ~US$0.009</span></div>
-  <p class="why"><b>Qué contiene:</b> solo frases textuales con cita, qué requisito cubre cada una, los huecos y notas sobre el caso. El agente escribe su respuesta con esto y nada más.</p>
+  <p class="why"><b>Qué contiene:</b> solo frases textuales con su cita y su <b>referencia exacta</b> (documento, fragmento, rango de caracteres), qué requisito cubre cada una y los huecos. Todo lo arma el código con piezas que ya existen: no hay texto nuevo. La lectura del caso ("3 faltas no es más de tres") la hace el agente.</p>
 <pre>{
   <span class="k">"status"</span>: <span class="s">"partial"</span>,
   <span class="k">"facts"</span>: [
     { <span class="k">"text"</span>: <span class="s">"Son causas de rescisión de la relación de trabajo, sin responsabilidad para el patrón:"</span>,
       <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › encabezado"</span>, <span class="k">"covers"</span>: [<span class="s">"R1"</span>] },
     { <span class="k">"text"</span>: <span class="s">"X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días, sin permiso del patrón o sin causa justificada;"</span>,
-      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>, <span class="k">"covers"</span>: [<span class="s">"R2"</span>] },
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>, <span class="k">"covers"</span>: [<span class="s">"R2"</span>],
+      <span class="k">"ref"</span>: { <span class="s">"doc"</span>: <span class="s">"lft-2024"</span>, <span class="s">"chunk"</span>: <span class="s">"lft-2024/art47/x"</span>, <span class="s">"chars"</span>: [<span class="n">41820</span>, <span class="n">41951</span>] } },
     { <span class="k">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito en el que refiera claramente la conducta o conductas que motivan la rescisión y la fecha o fechas en que se cometieron…"</span>,
       <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › párrafos finales"</span>, <span class="k">"covers"</span>: [<span class="s">"R3"</span>] }
   ],
   <span class="k">"coverage"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>, <span class="s">"R3"</span>: <span class="s">"covered"</span>, <span class="s">"R4"</span>: <span class="s">"not_found"</span> },
-  <span class="k">"gaps"</span>: [<span class="s">"R4: no se encontró política interna sobre faltas injustificadas"</span>],
-  <span class="k">"case_notes"</span>: [<span class="s">"El caso tiene 3 faltas; la fracción X exige más de tres en 30 días."</span>]
+  <span class="k">"gaps"</span>: [ { <span class="s">"id"</span>: <span class="s">"R4"</span>, <span class="s">"text"</span>: <span class="s">"reglas internas que cambien la respuesta"</span>, <span class="s">"status"</span>: <span class="s">"not_found"</span> } ],
+  <span class="k">"checks"</span>: { <span class="s">"answer_stated"</span>: <span class="n">0.86</span>, <span class="s">"applies_to_case"</span>: <span class="n">0.88</span>, <span class="s">"contradiction"</span>: <span class="n">0.04</span> }
 }</pre>
 </div>
 
@@ -568,6 +615,43 @@ nada sobre faltas. R4 sigue pendiente.</span></pre></div>
 <div class="node user">
   <div class="nhead"><h3><span class="tag t-user">agente</span> Respuesta al usuario</h3></div>
 <pre style="white-space: pre-wrap">"Con 3 faltas todavía no. La Ley Federal del Trabajo permite rescindir sin responsabilidad para la empresa cuando el trabajador tiene MÁS de tres faltas en 30 días sin permiso ni causa justificada (art. 47, fracc. X). Si llegara a una cuarta falta, la empresa debe darle aviso escrito con la conducta y las fechas (art. 47, párrafos finales). No encontré una política interna sobre faltas que cambie esto; si existe, conviene revisarla."</pre>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">opcional · el agente quiere leer más de una cita</div><div class="bar"></div><div class="arrow"></div></div>
+
+<div class="node code">
+  <div class="nhead"><h3><span class="tag t-code">memoria · fetch</span> Traer el texto completo o un rango</h3><span class="cost">sin JEV · sin LLM · US$0</span></div>
+  <p class="why"><b>Qué hace:</b> si el agente necesita más contexto de una cita (el artículo completo, la sección, o "desde aquí hasta allá"), lo pide por la referencia. Es una lectura directa de la memoria: no pasa por JEV ni por el LLM, respeta los permisos del usuario, y lo que devuelve sigue siendo texto textual del documento.</p>
+  <div class="io">
+    <div><span class="cap">el agente pide (cualquiera de estas formas)</span>
+<pre><span class="c">// 1. el fragmento completo donde está la cita</span>
+{ <span class="k">"ref"</span>: <span class="s">"lft-2024/art47/x"</span>, <span class="k">"scope"</span>: <span class="s">"chunk"</span> }
+
+<span class="c">// 2. subir de nivel: el artículo completo (padre del fragmento)</span>
+{ <span class="k">"ref"</span>: <span class="s">"lft-2024/art47/x"</span>, <span class="k">"scope"</span>: <span class="s">"parent"</span> }          <span class="c">// o "section", "document"</span>
+
+<span class="c">// 3. alrededor de la cita: N caracteres antes y después</span>
+{ <span class="k">"ref"</span>: <span class="s">"lft-2024/art47/x"</span>, <span class="k">"around"</span>: <span class="n">1500</span> }
+
+<span class="c">// 4. por rango exacto dentro del documento</span>
+{ <span class="k">"doc"</span>: <span class="s">"lft-2024"</span>, <span class="k">"chars"</span>: [<span class="n">40200</span>, <span class="n">43900</span>] }
+
+<span class="c">// 5. del fragmento A al fragmento B (p. ej. de la fracc. X al final del artículo)</span>
+{ <span class="k">"from"</span>: <span class="s">"lft-2024/art47/x"</span>, <span class="k">"to"</span>: <span class="s">"lft-2024/art47/final"</span> }</pre></div>
+    <div><span class="cap">la memoria responde (ejemplo: scope "parent")</span>
+<pre>{
+  <span class="k">"doc"</span>: <span class="s">"lft-2024"</span>, <span class="k">"path"</span>: <span class="s">"Ley Federal del Trabajo › Título 2 › Cap. IV › Art. 47"</span>,
+  <span class="k">"chars"</span>: [<span class="n">40212</span>, <span class="n">43890</span>],
+  <span class="k">"text"</span>: <span class="s">"Artículo 47.- Son causas de rescisión de la relación de trabajo, sin responsabilidad
+           para el patrón: I. Engañarlo el trabajador… X. Tener el trabajador más de tres faltas…
+           … El patrón que despida a un trabajador deberá darle aviso escrito…"</span>,
+  <span class="k">"truncated"</span>: <span class="n">false</span>,
+  <span class="k">"neighbors"</span>: { <span class="s">"prev"</span>: <span class="s">"lft-2024/art46"</span>, <span class="s">"next"</span>: <span class="s">"lft-2024/art48"</span> },
+  <span class="k">"version"</span>: { <span class="s">"in_force_from"</span>: <span class="s">"2019-05-01"</span> }
+}
+<span class="c">tope por pedido (p. ej. 20,000 caracteres); si se pasa, "truncated": true
+y "next_chars" para pedir el siguiente tramo</span></pre></div>
+  </div>
 </div>
 
 </div>
@@ -586,6 +670,7 @@ nada sobre faltas. R4 sigue pendiente.</span></pre></div>
       <tr><td class="num">8</td><td>LLM</td><td>Kit dirigido al hueco (momento B)</td><td class="num">1</td><td class="num">US$0.002</td></tr>
       <tr><td class="num">9</td><td>JEV</td><td>Ronda 2: calificar + elegir frases</td><td class="num">38</td><td class="num">US$0.0015</td></tr>
       <tr><td class="num">10</td><td>JEV</td><td>Revisión ronda 2 → entregar parcial</td><td class="num">1</td><td class="num">US$0.0001</td></tr>
+      <tr><td class="num">11</td><td>memoria</td><td>(opcional) fetch de la cita completa o por rango</td><td class="num">0</td><td class="num">US$0</td></tr>
       <tr><td></td><td></td><td><b>Total</b></td><td class="num"><b>JEV 81 · LLM 2</b></td><td class="num"><b>≈ US$0.009</b></td></tr>
     </tbody>
   </table></div>

@@ -197,7 +197,7 @@ html { scroll-behavior: smooth; }
   <h2 id="flujo-h">El flujo completo</h2>
   <figure>
     <div class="diagram">
-      <svg viewBox="0 0 770 890" role="img" aria-label="Flujo: entrada con contexto de la conversación; triaje de JEV con dos salidas: responde el LLM o se investiga. Al investigar, JEV decide si pedir el kit al LLM desde el inicio (solo por señales visibles). Luego puntos de entrada, ronda del bucle y revisión de JEV tras cada ronda: otra ronda, pedir un kit dirigido a lo que falta, entregar, no hay evidencia o pedir aclaración.">
+      <svg viewBox="0 0 770 890" role="img" aria-label="Flujo: entrada con contexto de la conversación; triaje de JEV con dos salidas: responde el LLM o se investiga. Al investigar, JEV decide si pedir el kit al LLM desde el inicio (solo por señales visibles). Luego puntos de entrada, ronda del bucle y revisión de JEV tras cada ronda: otra ronda, pedir un kit dirigido a lo que falta, entregar, no hay evidencia o falta contexto.">
         <rect class="b-plain" x="160" y="14" width="440" height="56" rx="9"/>
         <text class="tb" x="380" y="38" text-anchor="middle">Entrada del usuario</text>
         <text class="ts" x="380" y="56" text-anchor="middle">mensaje + resumen y últimos mensajes (vacío si es el primero)</text>
@@ -241,7 +241,7 @@ html { scroll-behavior: smooth; }
         <text class="tj" x="470" y="712" text-anchor="middle">¿se resolvió lo pedido? ¿qué falta?</text>
         <path class="e-acc" d="M290,698 H250 V580 H288" marker-end="url(#ah-acc)"/>
         <text class="ta" x="244" y="632" text-anchor="end">otra ronda</text>
-        <text class="ts" x="244" y="647" text-anchor="end">hay pistas sin seguir</text>
+        <text class="ts" x="244" y="647" text-anchor="end">hay pistas (las ve el código)</text>
         <path class="e-llm" d="M650,698 H768 V372 H759" marker-end="url(#ah-llm)"/>
         <text class="tl" x="758" y="482" text-anchor="end">falta algo y no</text>
         <text class="tl" x="758" y="497" text-anchor="end">hubo kit: pedir uno</text>
@@ -252,7 +252,7 @@ html { scroll-behavior: smooth; }
         <text class="ts" x="262" y="768" text-anchor="middle">resuelto</text>
         <text class="ts" x="478" y="768">sin qué buscar</text>
         <text class="ts" x="640" y="760">falta un dato</text>
-        <text class="ts" x="640" y="773">del caso</text>
+        <text class="ts" x="640" y="773">que nadie dio</text>
         <rect class="b-good" x="50" y="800" width="200" height="72" rx="9"/>
         <text class="tb" x="150" y="824" text-anchor="middle">Entrega al agente</text>
         <text class="ts" x="150" y="842" text-anchor="middle">hechos con cita,</text>
@@ -262,9 +262,9 @@ html { scroll-behavior: smooth; }
         <text class="ts" x="470" y="842" text-anchor="middle">dice qué requisito</text>
         <text class="ts" x="470" y="856" text-anchor="middle">falta</text>
         <rect class="b-plain" x="590" y="800" width="170" height="72" rx="9"/>
-        <text class="tb" x="675" y="824" text-anchor="middle">Pedir aclaración</text>
-        <text class="ts" x="675" y="842" text-anchor="middle">el agente pregunta</text>
-        <text class="ts" x="675" y="856" text-anchor="middle">al usuario</text>
+        <text class="tb" x="675" y="824" text-anchor="middle">Falta contexto</text>
+        <text class="ts" x="675" y="842" text-anchor="middle">el agente lo consigue:</text>
+        <text class="ts" x="675" y="856" text-anchor="middle">usuario u otra fuente</text>
       </svg>
     </div>
     <figcaption>Morado: JEV decide. Ámbar: el LLM escribe. Verde azulado: código y cuaderno. JEV solo decide con lo que puede ver: al inicio, sobre la entrada (¿investigar?, ¿falta contexto o vocabulario?); después de cada ronda, sobre lo encontrado (¿alcanza?, ¿qué falta?, ¿pido ayuda al LLM?). Nadie predice cuántas rondas hacen falta.</figcaption>
@@ -360,7 +360,8 @@ html { scroll-behavior: smooth; }
         </ul></div>
         <div class="card"><h4>Después de una ronda, por huecos</h4><ul>
           <li>La revisión (capa 5) dice que falta algo y no hay pistas claras.</li>
-          <li>El LLM recibe la entrada, la conversación, el cuaderno y lo que falta, y escribe un <b>kit dirigido</b>: variantes y términos para el hueco, no genéricos.</li>
+          <li>El LLM recibe la entrada, la conversación, el cuaderno, lo que falta y <b>lo que ya se intentó</b>, y escribe un <b>kit dirigido</b>: variantes y términos para el hueco, con un enfoque distinto al del primer kit.</li>
+          <li>El código descarta las variantes nuevas que, embebidas, quedan casi iguales (coseno ≥ 0.9) a algo ya buscado: así cada entrada nueva apunta a otro lugar.</li>
           <li>Si el kit ya existía, no se vuelve a pedir: se siguen las pistas.</li>
         </ul></div>
       </div>
@@ -380,9 +381,13 @@ html { scroll-behavior: smooth; }
   <span class="k">"conversation"</span>: { <span class="k">"summary"</span>: <span class="s">"…"</span>, <span class="k">"last_user_messages"</span>: [ <span class="s">"…"</span> ] },   <span class="c">// vacío si es el primer mensaje</span>
   <span class="k">"memory_scope"</span>: <span class="s">"…"</span>,
   <span class="k">"pieces"</span>: [<span class="s">"standalone"</span>, <span class="s">"case"</span>, <span class="s">"variants"</span>, <span class="s">"terms"</span>, <span class="s">"requirements"</span>],  <span class="c">// solo lo que JEV pidió</span>
-  <span class="k">"notebook"</span>: [ ],                                         <span class="c">// solo en el kit dirigido: lo ya encontrado</span>
-  <span class="k">"missing"</span>: <span class="s">""</span>                                            <span class="c">// solo en el kit dirigido: qué falta</span>
+  <span class="k">"notebook"</span>: [ ],              <span class="c">// solo kit dirigido: frases del cuaderno + título de su fuente (nunca documentos completos)</span>
+  <span class="k">"missing"</span>: <span class="s">""</span>,               <span class="c">// solo kit dirigido: qué falta (requisitos sin cubrir, missing_link)</span>
+  <span class="k">"already_tried"</span>: [ ],         <span class="c">// solo kit dirigido: variantes y términos ya buscados</span>
+  <span class="k">"found_but_not_useful"</span>: [ ],  <span class="c">// solo kit dirigido: títulos que salieron arriba y JEV no aprovechó</span>
+  <span class="k">"instructions"</span>: <span class="s">"Propón un enfoque distinto: otras palabras, otro tipo de documento, otra autoridad. No repitas already_tried."</span>
 }</pre>
+      <p class="note"><b>Qué ve el LLM:</b> nunca el documento completo de donde salió algo. Ve la entrada, la conversación y, en el kit dirigido, solo las frases textuales del cuaderno con el título de su fuente. Si el agente quiere leer más, usa el <a href="#fetch">fetch por referencia</a>.</p>
       <div class="codehead"><span class="eyebrow">Body del kit que escribe el LLM</span><span class="chip c-llm">salida estructurada · ~400 tokens</span></div>
 <pre class="code">{
   <span class="l">"standalone"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización a un operador que faltó 3 días injustificados en el mes?"</span>,
@@ -609,7 +614,7 @@ html { scroll-behavior: smooth; }
       <div class="eyebrow">Capa 5</div>
       <h2 id="c5h">Revisión tras cada ronda y cierre</h2>
       <div class="who"><span class="chip c-jev">decide JEV</span><span class="chip c-mid">1 llamada por ronda</span></div>
-      <p>Esta es la capa que decide la profundidad. Corre al final de <strong>cada</strong> ronda: si con lo encontrado ya se resolvió lo pedido, se entrega (y esa fue una investigación de 1 ronda); si no, decide si seguir las pistas, pedir un kit dirigido, abstenerse o pedir aclaración.</p>
+      <p>Esta es la capa que decide la profundidad. Corre al final de <strong>cada</strong> ronda: si con lo encontrado ya se resolvió lo pedido, se entrega (y esa fue una investigación de 1 ronda); si no, decide si seguir las pistas, pedir un kit dirigido, abstenerse o avisar que falta contexto. Las preguntas son <strong>las mismas en todas las rondas</strong>; lo que cambia es el state (el cuaderno crece).</p>
       <div class="codehead"><span class="eyebrow">State de la revisión</span></div>
 <pre class="code">{
   <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"case"</span>: { … },                 <span class="c">// del kit; sin kit: input + conversation</span>
@@ -622,10 +627,12 @@ html { scroll-behavior: smooth; }
           <li><code>answer_stated</code>: ¿los hechos, encadenados, dan la respuesta final?</li>
           <li><code>missing_link</code>: ¿queda algo de la pregunta sin identificar?</li>
           <li><code>applies_to_case</code>: ¿lo encontrado aplica al caso concreto?</li>
-          <li><code>worth_another_round</code>: ¿hay pistas sin seguir (referencias, pasos pendientes)?</li>
-        </ul></div>
+          <li><code>contradiction</code>: ¿dos hechos dicen cosas incompatibles sobre lo mismo?</li>
+          <li><code>needs_context</code>: ¿la respuesta depende de un dato que no está ni en la entrada, ni en la conversación, ni en los documentos (del usuario, de otro sistema, de una fecha)?</li>
+        </ul>
+        <p class="note">Las <b>pistas sin seguir</b> no se le preguntan a JEV: el código ya sabe si hay referencias citadas sin leer ("ver art. 40") o pasos del kit pendientes. Es una regla fija, no una respuesta.</p></div>
         <div class="card"><h4>Preguntas del kit</h4><ul>
-          <li>Una por requisito: "¿<code>known_facts</code> establece el procedimiento de aviso?"</li>
+          <li>Una por requisito (<code>cov_R1</code>, <code>cov_R2</code>…): "¿<code>known_facts</code> establece el procedimiento de aviso?" Se hacen en cada ronda hasta que el requisito queda cubierto.</li>
           <li>Las <code>closing_questions</code>, por ejemplo: "¿los hechos aplican a un operador con 3 faltas?"</li>
         </ul></div>
       </div>
@@ -637,7 +644,7 @@ html { scroll-behavior: smooth; }
           <tr><td>Falta algo, no hay pistas claras y aún no hubo kit</td><td><span class="chip c-llm">pedir kit dirigido al hueco</span> y otra ronda</td></tr>
           <tr><td>Falta un requisito y ya no hay qué buscar</td><td><span class="chip c-no">no hay evidencia de R…</span></td></tr>
           <tr><td>Hay conflicto entre documentos</td><td><span class="chip c-ok">entrega</span> con el conflicto marcado (el agente lo explica)</td></tr>
-          <tr><td>La respuesta depende de un dato del caso que nadie dio</td><td><span class="chip c-mid">pedir aclaración</span></td></tr>
+          <tr><td><code>needs_context</code> alto: falta un dato que ningún documento puede dar</td><td><span class="chip c-mid">falta contexto</span>: el agente decide cómo conseguirlo (preguntar al usuario, otra herramienta)</td></tr>
         </tbody>
       </table></div>
       <p class="evid"><b>Evidencia:</b> la abstención llegó a 0.849 y combinar las señales actuales no pasa de ahí. Los requisitos aportan información nueva: en vez de "¿alcanza?" en general, JEV verifica cada parte.</p>
@@ -650,19 +657,44 @@ html { scroll-behavior: smooth; }
   <h2 id="sh">Lo que recibe el agente</h2>
   <p>El agente escribe la respuesta al usuario, pero solo con lo que viene aquí, y cita cada afirmación.</p>
 <pre class="code">{
-  <span class="k">"status"</span>: <span class="s">"answered"</span>,                          <span class="c">// answered | partial | no_evidence | needs_clarification</span>
+  <span class="k">"status"</span>: <span class="s">"answered"</span>,                          <span class="c">// answered | partial | no_evidence | needs_context</span>
   <span class="k">"facts"</span>: [
     { <span class="s">"text"</span>: <span class="s">"…X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días, sin permiso del patrón o sin causa justificada."</span>,
-      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › fracc. X"</span>, <span class="s">"covers"</span>: [<span class="s">"R1"</span>, <span class="s">"R2"</span>], <span class="s">"confidence"</span>: 0.91 },
+      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › fracc. X"</span>,
+      <span class="s">"ref"</span>: { <span class="s">"doc"</span>: <span class="s">"lft"</span>, <span class="s">"chunk"</span>: <span class="s">"lft-art47"</span>, <span class="s">"chars"</span>: [1812, 1951] }, <span class="s">"covers"</span>: [<span class="s">"R1"</span>, <span class="s">"R2"</span>], <span class="s">"confidence"</span>: 0.91 },
     { <span class="s">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito…"</span>,
-      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › párrafos finales"</span>, <span class="s">"covers"</span>: [<span class="s">"R3"</span>], <span class="s">"confidence"</span>: 0.88 }
+      <span class="s">"cite"</span>: <span class="s">"Ley Federal del Trabajo › Art. 47 › párrafos finales"</span>,
+      <span class="s">"ref"</span>: { <span class="s">"doc"</span>: <span class="s">"lft"</span>, <span class="s">"chunk"</span>: <span class="s">"lft-art47"</span>, <span class="s">"chars"</span>: [2410, 2533] }, <span class="s">"covers"</span>: [<span class="s">"R3"</span>], <span class="s">"confidence"</span>: 0.88 }
   ],
   <span class="k">"coverage"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>, <span class="s">"R3"</span>: <span class="s">"covered"</span>, <span class="s">"R4"</span>: <span class="s">"not_found"</span> },
-  <span class="k">"gaps"</span>: [<span class="s">"R4: no se encontró política interna de ausentismo"</span>],
-  <span class="k">"notes"</span>: [<span class="s">"El caso tiene 3 faltas; el umbral legal es 'más de tres' en 30 días."</span>],
+  <span class="k">"gaps"</span>: [ { <span class="s">"requirement"</span>: <span class="s">"R4"</span>, <span class="s">"text"</span>: <span class="s">"política interna de ausentismo"</span>, <span class="s">"status"</span>: <span class="s">"not_found"</span> } ],  <span class="c">// texto del requisito, no redactado</span>
+  <span class="k">"case"</span>: { <span class="s">"faltas"</span>: <span class="s">"3 en el mes, sin aviso"</span> },          <span class="c">// del kit, para que el agente lo compare</span>
   <span class="k">"conflicts"</span>: []
 }</pre>
-  <p class="note">En este ejemplo, la nota del final es la que importa para el usuario: con exactamente 3 faltas <b>no</b> se cumple "más de tres". Esa lectura la hace el agente; la memoria le entrega la frase exacta y el dato del caso para que no se equivoque. Ejemplo ilustrativo.</p>
+  <p class="note"><b>La memoria no redacta nada.</b> Entrega frases textuales con su referencia exacta, la cobertura y los huecos. Lo que importa al usuario (con exactamente 3 faltas <b>no</b> se cumple "más de tres") lo concluye el agente, comparando la frase exacta con el dato del caso. Ejemplo ilustrativo.</p>
+
+  <h3 id="fetch">Fetch por referencia: leer más cuando el agente lo decide</h3>
+  <p>Cada hecho trae un <code>ref</code>. Con él, el agente puede pedir el contexto que necesite sin volver a buscar: el chunk entero, el artículo padre, la sección, el documento completo, o un rango exacto. Es lectura directa: no llama a JEV ni al LLM y cuesta US$0.</p>
+<pre class="code">{
+  <span class="k">"ref"</span>: { <span class="s">"doc"</span>: <span class="s">"lft"</span>, <span class="s">"chunk"</span>: <span class="s">"lft-art47"</span> },
+  <span class="k">"scope"</span>: <span class="s">"chunk"</span>,                   <span class="c">// chunk | parent | section | document</span>
+  <span class="k">"around"</span>: 600,                      <span class="c">// opcional: N caracteres antes y después del hecho</span>
+  <span class="k">"chars"</span>: [1500, 4200],              <span class="c">// opcional: rango exacto dentro del documento</span>
+  <span class="k">"from"</span>: <span class="s">"Artículo 47"</span>, <span class="k">"to"</span>: <span class="s">"Artículo 48"</span>,  <span class="c">// opcional: de este fragmento hasta este otro</span>
+  <span class="k">"max_chars"</span>: 8000
+}</pre>
+<pre class="code">{
+  <span class="k">"path"</span>: <span class="s">"Ley Federal del Trabajo › Título Segundo › Capítulo IV › Art. 47"</span>,
+  <span class="k">"text"</span>: <span class="s">"Artículo 47.- Son causas de rescisión de la relación de trabajo, sin responsabilidad para el patrón: I. …"</span>,
+  <span class="k">"chars"</span>: [0, 8000], <span class="k">"truncated"</span>: true, <span class="k">"next_chars"</span>: [8000, 16000],
+  <span class="k">"neighbors"</span>: { <span class="s">"prev"</span>: <span class="s">"lft-art46"</span>, <span class="s">"next"</span>: <span class="s">"lft-art48"</span> },
+  <span class="k">"version"</span>: <span class="s">"2024-12-24"</span>
+}</pre>
+  <ul>
+    <li>Si el texto excede <code>max_chars</code>, regresa <code>truncated</code> y <code>next_chars</code> para pedir el siguiente tramo: "seguir leyendo" sin límite fijo.</li>
+    <li>Respeta permisos: solo devuelve documentos que el usuario puede ver.</li>
+    <li>Lo que el agente lea por fetch no entra al cuaderno solo; si quiere usarlo como evidencia, lo cita con el mismo <code>ref</code> y rango.</li>
+  </ul>
 </section>
 
 <!-- ================= EJEMPLOS ================= -->
