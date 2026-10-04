@@ -1,0 +1,594 @@
+<title>Corrida simulada JevRAG v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Familjen+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: una sola columna que se lee de arriba abajo como la traza de una corrida; una línea vertical une las llamadas;
+   en cada bifurcación se muestran todas las salidas y las no tomadas quedan atenuadas.
+   Colores por actor: morado = JEV, ámbar = LLM, verde azulado = código, gris = usuario/agente. */
+:root {
+  --bg: #F2F5F6; --surface: #FFFFFF; --fg: #16212A; --muted: #56646F;
+  --line: #D2DADF; --line-strong: #8C9AA5;
+  --accent: #0C6B70; --accent-soft: #DCEEEE;
+  --jev: #6A40B4; --jev-soft: #EEE7F8;
+  --llm: #9A5B00; --llm-soft: #FBEFD9;
+  --good: #2A7A4A; --good-soft: #E0F0E6;
+  --bad: #B03A28; --bad-soft: #F8E2DD;
+  --code-bg: #F6F8F9;
+  --font-display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+    --line: #2B3843; --line-strong: #63727E;
+    --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+    --llm: #E9B25C; --llm-soft: #3A2A12; --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+    --code-bg: #121A21; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F151A; --surface: #172028; --fg: #E3E9ED; --muted: #9BA9B3;
+  --line: #2B3843; --line-strong: #63727E;
+  --accent: #52C2C4; --accent-soft: #123A3D; --jev: #B89BF2; --jev-soft: #2A2140;
+  --llm: #E9B25C; --llm-soft: #3A2A12; --good: #6CC891; --good-soft: #163324; --bad: #F2907A; --bad-soft: #3F221C;
+  --code-bg: #121A21; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 16px; padding-block: 36px 72px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.2; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.5rem); }
+h3 { font-size: 1.05rem; }
+p { margin: 0; max-width: 72ch; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 12px; margin-bottom: 22px; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.86rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw-jev { background: var(--jev); } .sw-llm { background: var(--llm); } .sw-code { background: var(--accent); } .sw-user { background: var(--line-strong); }
+.disclaimer { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 10px; padding: 10px 14px; font-size: 0.9rem; color: var(--muted); max-width: none; }
+/* flujo */
+.flow { display: grid; justify-items: stretch; }
+.link { display: grid; justify-items: center; padding-block: 4px; }
+.link .bar { width: 2px; height: 26px; background: var(--line-strong); }
+.link .lbl { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); background: var(--bg); padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; }
+.link .arrow { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid var(--line-strong); }
+.node { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--line-strong); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.node.jev { border-left-color: var(--jev); }
+.node.llm { border-left-color: var(--llm); }
+.node.code { border-left-color: var(--accent); }
+.node.user { border-left-color: var(--line-strong); }
+.node.out { border-left-color: var(--good); }
+.nhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; justify-content: space-between; }
+.nhead h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.tag { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.t-jev { background: var(--jev-soft); color: var(--jev); }
+.t-llm { background: var(--llm-soft); color: var(--llm); }
+.t-code { background: var(--accent-soft); color: var(--accent); }
+.t-user { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.t-out { background: var(--good-soft); color: var(--good); }
+.cost { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.why { font-size: 0.93rem; color: var(--muted); max-width: 80ch; }
+.why b { color: var(--fg); }
+.io { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.io > div { min-width: 0; display: grid; gap: 4px; align-content: start; }
+.io .cap { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+pre { margin: 0; font-family: var(--font-mono); font-size: 0.76rem; line-height: 1.5; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; color: var(--fg); }
+pre .k { color: var(--jev); } pre .s { color: var(--accent); } pre .n { color: var(--llm); font-weight: 600; } pre .c { color: var(--muted); font-style: italic; }
+/* bifurcaciones */
+.fork { display: grid; gap: 8px; }
+.fork .forkbar { display: grid; justify-items: center; }
+.fork .forkbar .bar { width: 2px; height: 14px; background: var(--line-strong); }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; border-top: 2px solid var(--line-strong); padding-top: 10px; }
+.choice { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--surface); display: grid; gap: 2px; min-width: 0; }
+.choice b { font-family: var(--font-display); font-size: 0.95rem; }
+.choice span { font-size: 0.82rem; color: var(--muted); }
+.choice.taken { border: 2px solid var(--good); background: var(--good-soft); }
+.choice.taken b::before { content: "✓ "; color: var(--good); }
+.choice.ghost { opacity: 0.55; border-style: dashed; }
+.summary { margin-top: 26px; display: grid; gap: 10px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.9rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+
+<main class="wrap">
+<header>
+  <div class="eyebrow">JevRAG v3 · corrida simulada de un caso · cada bloque es una llamada</div>
+  <h1>Corrida simulada JevRAG v3</h1>
+  <p class="lede">Un usuario de RH pregunta, a mitad de una conversación, si puede despedir a un trabajador sin pagarle. Así se verían, en orden, las llamadas a JEV, al LLM y al código, con el JSON que entra y el que sale de cada una.</p>
+  <div class="legend" aria-hidden="true">
+    <span><i class="sw-user"></i>usuario / agente</span>
+    <span><i class="sw-jev"></i>llamada a JEV (decide)</span>
+    <span><i class="sw-llm"></i>llamada al LLM (escribe)</span>
+    <span><i class="sw-code"></i>código (busca, guarda)</span>
+  </div>
+  <p class="disclaimer">Simulación ilustrativa: las probabilidades y los pasajes recuperados están inventados para mostrar la forma de cada llamada. El texto citado de la Ley Federal del Trabajo (art. 47) es real.</p>
+</header>
+
+<div class="flow">
+
+<!-- 0 INPUT -->
+<div class="node user">
+  <div class="nhead"><h3><span class="tag t-user">entrada</span> El usuario escribe</h3><span class="cost">llamadas 0 · US$0</span></div>
+  <p class="why">Es el tercer mensaje de la conversación. El agente arma el contexto (resumen + últimos mensajes del usuario) y llama a la memoria.</p>
+<pre>{
+  <span class="k">"input"</span>: <span class="s">"Oye, y con lo que te conté del de la planta de Toluca, ¿lo podemos correr sin pagarle?"</span>,
+  <span class="k">"conversation"</span>: {
+    <span class="k">"summary"</span>: <span class="s">"Gerente de RH de una planta en Toluca. Pregunta por un operador con contrato indefinido que faltó sin avisar."</span>,
+    <span class="k">"last_user_messages"</span>: [
+      <span class="s">"tengo un operador que faltó 3 días este mes sin avisar"</span>,
+      <span class="s">"ya tiene 2 años con nosotros"</span>
+    ]
+  },
+  <span class="k">"memory_scope"</span>: <span class="s">"Leyes laborales de México y políticas internas de RH"</span>
+}</pre>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">la memoria recibe la petición</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 1 TRIAJE -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamada 1</span> Triaje</h3><span class="cost">JEV 1 · ~US$0.0001</span></div>
+  <p class="why"><b>Qué decide:</b> si esto lo responde el LLM sin buscar, o si hay que investigar en la memoria. De paso, anota señales que se ven en el texto (si depende de la conversación, si trae un caso).</p>
+  <div class="io">
+    <div><span class="cap">envía → POST /v1/systemone</span>
+<pre>{
+  <span class="k">"model"</span>: <span class="s">"jev-1.13.0"</span>,
+  <span class="k">"state"</span>: { <span class="c">/* input + conversation + memory_scope, tal cual arriba */</span> },
+  <span class="k">"questions"</span>: {
+    <span class="k">"request_kind"</span>: { <span class="s">"type"</span>: <span class="s">"choice"</span>,
+      <span class="s">"instructions"</span>: <span class="s">"¿Qué necesita `input` para responderse bien?"</span>,
+      <span class="s">"criteria"</span>: {
+        <span class="s">"conversation"</span>: <span class="s">"Saludo, charla o algo sobre la conversación misma."</span>,
+        <span class="s">"general_knowledge"</span>: <span class="s">"Se responde con saber general."</span>,
+        <span class="s">"needs_memory"</span>: <span class="s">"Pide información escrita en documentos de `memory_scope`."</span> } },
+    <span class="k">"self_contained"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+      <span class="s">"instructions"</span>: <span class="s">"¿`input` se entiende sin `conversation`?"</span> },
+    <span class="k">"has_conditions"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+      <span class="s">"instructions"</span>: <span class="s">"¿`input` o `conversation` traen un caso con condiciones que cambian la respuesta?"</span> },
+    <span class="k">"too_ambiguous"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>,
+      <span class="s">"instructions"</span>: <span class="s">"¿Falta un dato tan básico que conviene preguntar antes de buscar?"</span> }
+  }
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"answers"</span>: {
+    <span class="k">"request_kind"</span>: { <span class="s">"type"</span>: <span class="s">"choice"</span>, <span class="s">"choice"</span>: <span class="s">"needs_memory"</span>,
+      <span class="s">"probabilities"</span>: { <span class="s">"conversation"</span>: <span class="n">0.03</span>,
+        <span class="s">"general_knowledge"</span>: <span class="n">0.09</span>, <span class="s">"needs_memory"</span>: <span class="n">0.88</span> } },
+    <span class="k">"self_contained"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"noul"</span>: <span class="n">0.07</span> },
+    <span class="k">"has_conditions"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"noul"</span>: <span class="n">0.91</span> },
+    <span class="k">"too_ambiguous"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"noul"</span>: <span class="n">0.12</span> }
+  },
+  <span class="k">"usage"</span>: { <span class="s">"input_tokens"</span>: <span class="n">612</span> }
+}</pre>
+<pre><span class="c">código: needs_memory 0.88 → investigar
+señales: self_contained 0.07 (depende del chat), has_conditions 0.91 (trae caso)</span></pre></div>
+  </div>
+</div>
+
+<div class="fork">
+  <div class="forkbar"><div class="bar"></div></div>
+  <div class="choices">
+    <div class="choice ghost"><b>Responde el LLM</b><span>no se tomó: needs_memory alto. Habría respondido el agente sin tocar la memoria.</span></div>
+    <div class="choice ghost"><b>Preguntar antes</b><span>no se tomó: too_ambiguous 0.12</span></div>
+    <div class="choice taken"><b>Investigar</b><span>pide información de los documentos</span></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">señales visibles → ¿pedir ayuda al LLM ya?</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 2 ACTIVACIÓN -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamada 2</span> ¿Pedir el kit ahora? (momento A)</h3><span class="cost">JEV 2 · ~US$0.0002</span></div>
+  <p class="why"><b>Qué decide:</b> si la búsqueda arrancaría ciega sin ayuda, y qué piezas pedir. Aquí sí hay señales: "lo", "correr", "sin pagarle" y "el de la planta" no encontrarían el artículo correcto.</p>
+  <div class="io">
+    <div><span class="cap">envía (mismo state)</span>
+<pre>{
+  <span class="k">"questions"</span>: {
+    <span class="k">"needs_rewrite"</span>:    { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿Hay que reescribir `input` para que una búsqueda lo entienda sin la conversación?"</span> },
+    <span class="k">"needs_vocabulary"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿Las palabras de `input` probablemente no son las que usan los documentos?"</span> },
+    <span class="k">"needs_steps"</span>:      { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿`input` describe algo a través de otra cosa que primero hay que identificar?"</span> },
+    <span class="k">"needs_checklist"</span>:  { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿La respuesta depende de varios requisitos que hay que verificar uno por uno?"</span> }
+  }
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"answers"</span>: {
+    <span class="k">"needs_rewrite"</span>:    { <span class="s">"noul"</span>: <span class="n">0.94</span> },
+    <span class="k">"needs_vocabulary"</span>: { <span class="s">"noul"</span>: <span class="n">0.86</span> },
+    <span class="k">"needs_steps"</span>:      { <span class="s">"noul"</span>: <span class="n">0.31</span> },
+    <span class="k">"needs_checklist"</span>:  { <span class="s">"noul"</span>: <span class="n">0.79</span> }
+  }
+}</pre>
+<pre><span class="c">código: piezas = standalone, case, variants, terms,
+        requirements, jev_questions   (steps no: 0.31)</span></pre></div>
+  </div>
+</div>
+
+<div class="fork">
+  <div class="forkbar"><div class="bar"></div></div>
+  <div class="choices">
+    <div class="choice ghost"><b>Sin kit</b><span>no se tomó. Si nada hubiera salido alto, la ronda 1 buscaría con la entrada tal cual.</span></div>
+    <div class="choice taken"><b>Pedir kit (6 piezas)</b><span>reescritura, caso, variantes, términos, requisitos, preguntas para JEV</span></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">el LLM escribe solo esas piezas</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 3 LLM KIT -->
+<div class="node llm">
+  <div class="nhead"><h3><span class="tag t-llm">LLM · llamada 1</span> Kit de investigación</h3><span class="cost">LLM 1 · ~US$0.002</span></div>
+  <p class="why"><b>Qué hace:</b> convierte la petición coloquial en material de búsqueda. Regla: lo desconocido va entre corchetes; las preguntas para JEV preguntan por el tipo de dato, nunca por el valor. Nada de esto se cita al usuario.</p>
+  <div class="io">
+    <div><span class="cap">envía</span>
+<pre>{
+  <span class="k">"task"</span>: <span class="s">"search_kit"</span>,
+  <span class="k">"input"</span>: <span class="s">"…¿lo podemos correr sin pagarle?"</span>,
+  <span class="k">"conversation"</span>: { <span class="s">"summary"</span>: <span class="s">"…"</span>, <span class="s">"last_user_messages"</span>: [<span class="s">"…"</span>] },
+  <span class="k">"memory_scope"</span>: <span class="s">"Leyes laborales de México y políticas internas de RH"</span>,
+  <span class="k">"pieces"</span>: [<span class="s">"standalone"</span>, <span class="s">"case"</span>, <span class="s">"variants"</span>, <span class="s">"terms"</span>,
+             <span class="s">"requirements"</span>, <span class="s">"jev_questions"</span>],
+  <span class="k">"rules"</span>: [
+    <span class="s">"No afirmes datos que no estén en input o conversation; usa [corchetes]."</span>,
+    <span class="s">"Las preguntas para JEV no incluyen la respuesta."</span>,
+    <span class="s">"5 variantes con vocabularios distintos."</span>
+  ]
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"standalone"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización a un operador con
+                 contrato indefinido que faltó 3 días injustificados en el mes?"</span>,
+  <span class="k">"case"</span>: { <span class="s">"puesto"</span>: <span class="s">"operador"</span>, <span class="s">"contrato"</span>: <span class="s">"indefinido"</span>,
+            <span class="s">"antigüedad"</span>: <span class="s">"2 años"</span>, <span class="s">"faltas"</span>: <span class="s">"3 en el mes, sin aviso"</span> },
+  <span class="k">"variants"</span>: [
+    <span class="s">"causales de rescisión laboral por inasistencias"</span>,
+    <span class="s">"despido justificado por faltas sin permiso del patrón"</span>,
+    <span class="s">"número de faltas que permite terminar sin indemnizar"</span>,
+    <span class="s">"política interna de ausentismo y sanciones"</span>,
+    <span class="s">"terminación de la relación de trabajo sin responsabilidad"</span>
+  ],
+  <span class="k">"terms"</span>: [<span class="s">"rescisión"</span>, <span class="s">"sin responsabilidad para el patrón"</span>,
+            <span class="s">"faltas de asistencia"</span>, <span class="s">"ausentismo"</span>],
+  <span class="k">"requirements"</span>: [
+    { <span class="s">"id"</span>: <span class="s">"R1"</span>, <span class="s">"text"</span>: <span class="s">"causa legal que permite rescindir"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R2"</span>, <span class="s">"text"</span>: <span class="s">"umbral de faltas y periodo"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R3"</span>, <span class="s">"text"</span>: <span class="s">"aviso o procedimiento obligatorio"</span> },
+    { <span class="s">"id"</span>: <span class="s">"R4"</span>, <span class="s">"text"</span>: <span class="s">"reglas internas que cambien la respuesta"</span> }
+  ],
+  <span class="k">"jev_questions"</span>: {
+    <span class="s">"q_R2"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿`passage` establece cuántas faltas injustificadas, y en qué periodo, permiten rescindir?"</span> },
+    <span class="s">"q_R3"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿`passage` describe un aviso o procedimiento que el patrón debe seguir al rescindir?"</span> },
+    <span class="s">"q_R4"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿`passage` establece una regla interna sobre ausencias que cambie la sanción?"</span> }
+  }
+}</pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">el kit se convierte en búsquedas</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 4 CODE: ENTRY POINTS -->
+<div class="node code">
+  <div class="nhead"><h3><span class="tag t-code">código</span> Puntos de entrada (ronda 1)</h3><span class="cost">8 embeddings · ~US$0.0001</span></div>
+  <p class="why"><b>Qué hace:</b> lanza una búsqueda por cada canal (la pregunta original, la reescrita, las 5 variantes y los términos), fusiona las listas y deja hasta 30 candidatos para que JEV los califique. No decide nada.</p>
+  <div class="io">
+    <div><span class="cap">canales</span>
+<pre>[
+  { <span class="k">"channel"</span>: <span class="s">"input original"</span>,  <span class="k">"kind"</span>: <span class="s">"vector"</span> },
+  { <span class="k">"channel"</span>: <span class="s">"standalone"</span>,      <span class="k">"kind"</span>: <span class="s">"vector"</span> },
+  { <span class="k">"channel"</span>: <span class="s">"variants[0..4]"</span>,  <span class="k">"kind"</span>: <span class="s">"5 × vector"</span> },
+  { <span class="k">"channel"</span>: <span class="s">"terms"</span>,           <span class="k">"kind"</span>: <span class="s">"palabras clave"</span> }
+]
+<span class="c">fusión RRF + cuota mínima de 2 por canal · filtros: vigente hoy, permisos de RH</span></pre></div>
+    <div><span class="cap">resultado: 30 candidatos (primeros 4)</span>
+<pre>[
+  { <span class="k">"rank"</span>: <span class="n">1</span>, <span class="k">"id"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>,
+    <span class="k">"from"</span>: [<span class="s">"variants[1]"</span>, <span class="s">"variants[2]"</span>, <span class="s">"terms"</span>] },
+  { <span class="k">"rank"</span>: <span class="n">2</span>, <span class="k">"id"</span>: <span class="s">"LFT › Art. 47 › encabezado"</span>,
+    <span class="k">"from"</span>: [<span class="s">"standalone"</span>, <span class="s">"variants[4]"</span>] },
+  { <span class="k">"rank"</span>: <span class="n">3</span>, <span class="k">"id"</span>: <span class="s">"LFT › Art. 48"</span>, <span class="k">"from"</span>: [<span class="s">"variants[2]"</span>] },
+  { <span class="k">"rank"</span>: <span class="n">4</span>, <span class="k">"id"</span>: <span class="s">"Reglamento interior › Cap. 5 › Puntualidad"</span>,
+    <span class="k">"from"</span>: [<span class="s">"variants[3]"</span>] },
+  <span class="c">… 26 más</span>
+]</pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">ronda 1 · JEV califica 30 pasajes (30 llamadas en lote)</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 5 JEV ROUND 1 -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamadas 3–32</span> Calificar pasajes (se muestra una de 30)</h3><span class="cost">JEV 32 · ~US$0.0013</span></div>
+  <p class="why"><b>Qué decide:</b> cuánto sirve cada pasaje. En la misma llamada van las preguntas fijas (<code>next_needed</code>, <code>answers_query</code>) y las del kit (<code>q_R2</code>, <code>q_R3</code>, <code>q_R4</code>). JEV reordena; no descarta.</p>
+  <div class="io">
+    <div><span class="cap">envía (pasaje #1)</span>
+<pre>{
+  <span class="k">"state"</span>: {
+    <span class="k">"query"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización a un operador… 3 días…?"</span>,
+    <span class="k">"case"</span>: { <span class="s">"faltas"</span>: <span class="s">"3 en el mes, sin aviso"</span>, <span class="s">"contrato"</span>: <span class="s">"indefinido"</span> },
+    <span class="k">"requirements"</span>: [ <span class="c">R1–R4, todos "pending"</span> ],
+    <span class="k">"known_facts"</span>: [],
+    <span class="k">"passage"</span>: { <span class="k">"title"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>,
+      <span class="k">"text"</span>: <span class="s">"X. Tener el trabajador más de tres faltas de asistencia en un período
+              de treinta días, sin permiso del patrón o sin causa justificada;"</span> }
+  },
+  <span class="k">"questions"</span>: { <span class="s">"next_needed"</span>: {…}, <span class="s">"answers_query"</span>: {…},
+                 <span class="s">"q_R2"</span>: {…}, <span class="s">"q_R3"</span>: {…}, <span class="s">"q_R4"</span>: {…} }
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"answers"</span>: {
+    <span class="k">"next_needed"</span>:   { <span class="s">"noul"</span>: <span class="n">0.93</span> },
+    <span class="k">"answers_query"</span>: { <span class="s">"noul"</span>: <span class="n">0.41</span> },
+    <span class="k">"q_R2"</span>: { <span class="s">"noul"</span>: <span class="n">0.96</span> },
+    <span class="k">"q_R3"</span>: { <span class="s">"noul"</span>: <span class="n">0.04</span> },
+    <span class="k">"q_R4"</span>: { <span class="s">"noul"</span>: <span class="n">0.03</span> }
+  }
+}</pre>
+<pre><span class="c">orden final de la ronda: Art. 47 fracc. X (0.93), Art. 47 encabezado (0.88),
+Reglamento interior Cap. 5 (0.62), Art. 48 (0.35) …
+→ JEV lee las frases de los 3 mejores</span></pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">JEV elige frases de los 3 mejores (≈ 9 llamadas)</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 6 JEV SENTENCES + NOTEBOOK -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamadas 33–41</span> Elegir frases → cuaderno</h3><span class="cost">JEV 41 · ~US$0.0016</span></div>
+  <p class="why"><b>Qué decide:</b> qué frase textual entra al cuaderno y qué requisito cubre. El código guarda la frase con su cita exacta.</p>
+  <div class="io">
+    <div><span class="cap">envía (una frase)</span>
+<pre>{
+  <span class="k">"state"</span>: {
+    <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"known_facts"</span>: [],
+    <span class="k">"source"</span>: <span class="s">"LFT › Art. 47 › encabezado"</span>,
+    <span class="k">"sentence"</span>: <span class="s">"Son causas de rescisión de la relación de trabajo, sin responsabilidad
+                 para el patrón:"</span>,
+    <span class="k">"requirements"</span>: [<span class="s">"R1 …"</span>, <span class="s">"R2 …"</span>, <span class="s">"R3 …"</span>, <span class="s">"R4 …"</span>]
+  },
+  <span class="k">"questions"</span>: {
+    <span class="k">"needed_fact"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, … },
+    <span class="k">"covers"</span>: { <span class="s">"type"</span>: <span class="s">"choice"</span>,
+      <span class="s">"criteria"</span>: { <span class="s">"R1"</span>: …, <span class="s">"R2"</span>: …, <span class="s">"R3"</span>: …, <span class="s">"R4"</span>: …, <span class="s">"none"</span>: … } }
+  }
+}</pre></div>
+    <div><span class="cap">cuaderno al terminar la ronda 1</span>
+<pre>{
+  <span class="k">"facts"</span>: [
+    { <span class="k">"text"</span>: <span class="s">"Son causas de rescisión de la relación de trabajo, sin
+               responsabilidad para el patrón:"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › encabezado"</span>, <span class="k">"covers"</span>: [<span class="s">"R1"</span>], <span class="k">"p"</span>: <span class="n">0.90</span> },
+    { <span class="k">"text"</span>: <span class="s">"X. Tener el trabajador más de tres faltas de asistencia en un
+               período de treinta días, sin permiso del patrón o sin causa justificada;"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>, <span class="k">"covers"</span>: [<span class="s">"R2"</span>], <span class="k">"p"</span>: <span class="n">0.95</span> }
+  ],
+  <span class="k">"requirements"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>,
+                    <span class="s">"R3"</span>: <span class="s">"pending"</span>, <span class="s">"R4"</span>: <span class="s">"pending"</span> }
+}
+<span class="c">El Reglamento interior (Cap. 5) habla de retardos, no de faltas:
+JEV no tomó ninguna frase de ahí para R4.</span></pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">fin de la ronda 1 → revisión</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 7 REVIEW 1 -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamada 42</span> Revisión de la ronda 1</h3><span class="cost">JEV 42 · ~US$0.0017</span></div>
+  <p class="why"><b>Qué decide:</b> si ya se resolvió lo pedido y, si no, qué hacer. Aquí se decide la profundidad: nadie lo predijo al inicio.</p>
+  <div class="io">
+    <div><span class="cap">envía</span>
+<pre>{
+  <span class="k">"state"</span>: {
+    <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"case"</span>: { … },
+    <span class="k">"requirements"</span>: [ <span class="c">R1 covered, R2 covered, R3 pending, R4 pending</span> ],
+    <span class="k">"known_facts"</span>: [ <span class="c">las 2 frases del cuaderno</span> ],
+    <span class="k">"unfollowed_leads"</span>: []        <span class="c">// referencias citadas sin leer, pasos listos</span>
+  },
+  <span class="k">"questions"</span>: {
+    <span class="k">"answer_stated"</span>: {…}, <span class="k">"missing_link"</span>: {…},
+    <span class="k">"applies_to_case"</span>: {…}, <span class="k">"worth_another_round"</span>: {…},
+    <span class="k">"user_must_clarify"</span>: { <span class="s">"type"</span>: <span class="s">"noul"</span>, <span class="s">"instructions"</span>:
+      <span class="s">"¿Lo que falta es un dato del caso que solo el usuario sabe?"</span> }
+  }
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"answers"</span>: {
+    <span class="k">"answer_stated"</span>:       { <span class="s">"noul"</span>: <span class="n">0.38</span> },
+    <span class="k">"missing_link"</span>:        { <span class="s">"noul"</span>: <span class="n">0.84</span> },
+    <span class="k">"applies_to_case"</span>:     { <span class="s">"noul"</span>: <span class="n">0.81</span> },
+    <span class="k">"worth_another_round"</span>: { <span class="s">"noul"</span>: <span class="n">0.22</span> },
+    <span class="k">"user_must_clarify"</span>:   { <span class="s">"noul"</span>: <span class="n">0.10</span> }
+  }
+}</pre>
+<pre><span class="c">código: falta R3 y R4; no hay pistas sin seguir (0.22);
+el kit de inicio ya se usó, pero sin kit dirigido todavía → pedir kit dirigido (momento B)</span></pre></div>
+  </div>
+</div>
+
+<div class="fork">
+  <div class="forkbar"><div class="bar"></div></div>
+  <div class="choices">
+    <div class="choice ghost"><b>Entregar</b><span>no: answer_stated 0.38</span></div>
+    <div class="choice ghost"><b>Otra ronda, sin LLM</b><span>no: no hay pistas que seguir</span></div>
+    <div class="choice taken"><b>Kit dirigido (momento B)</b><span>falta algo y no hay pistas: pedir búsquedas para el hueco</span></div>
+    <div class="choice ghost"><b>No hay evidencia</b><span>todavía no: queda un intento dirigido</span></div>
+    <div class="choice ghost"><b>Pedir aclaración</b><span>no: user_must_clarify 0.10</span></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">el LLM recibe el cuaderno y lo que falta</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 8 LLM KIT B -->
+<div class="node llm">
+  <div class="nhead"><h3><span class="tag t-llm">LLM · llamada 2</span> Kit dirigido al hueco</h3><span class="cost">LLM 2 · ~US$0.004</span></div>
+  <p class="why"><b>Qué hace:</b> ya no escribe material genérico. Sabe qué se encontró y qué falta, y escribe variantes y términos solo para R3 y R4. Se pide una sola vez: si tras esto sigue faltando, la memoria probablemente no lo tiene.</p>
+  <div class="io">
+    <div><span class="cap">envía</span>
+<pre>{
+  <span class="k">"task"</span>: <span class="s">"targeted_kit"</span>,
+  <span class="k">"standalone"</span>: <span class="s">"¿Puede una empresa despedir sin indemnización…?"</span>,
+  <span class="k">"conversation"</span>: { <span class="c">igual que antes</span> },
+  <span class="k">"notebook"</span>: [
+    { <span class="s">"text"</span>: <span class="s">"Son causas de rescisión…"</span>, <span class="s">"cite"</span>: <span class="s">"LFT › Art. 47"</span> },
+    { <span class="s">"text"</span>: <span class="s">"X. Tener el trabajador más de tres faltas…"</span>,
+      <span class="s">"cite"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span> }
+  ],
+  <span class="k">"missing"</span>: [
+    <span class="s">"R3: aviso o procedimiento obligatorio al rescindir"</span>,
+    <span class="s">"R4: reglas internas sobre ausencias"</span>
+  ],
+  <span class="k">"pieces"</span>: [<span class="s">"variants"</span>, <span class="s">"terms"</span>]
+}</pre></div>
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"variants"</span>: [
+    <span class="s">"aviso escrito al trabajador con la conducta y fecha de la rescisión"</span>,
+    <span class="s">"plazo para entregar o comunicar el aviso de rescisión"</span>,
+    <span class="s">"efecto de no dar aviso de rescisión al trabajador"</span>,
+    <span class="s">"procedimiento interno de RH antes de un despido"</span>,
+    <span class="s">"reglamento interior: faltas injustificadas y medidas disciplinarias"</span>
+  ],
+  <span class="k">"terms"</span>: [<span class="s">"aviso de rescisión"</span>, <span class="s">"aviso escrito"</span>, <span class="s">"notificación"</span>,
+            <span class="s">"medidas disciplinarias"</span>, <span class="s">"reglamento interior"</span>]
+}</pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">ronda 2 · nuevas búsquedas solo para R3 y R4</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 9 ROUND 2 -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamadas 43–80</span> Ronda 2: calificar y elegir frases</h3><span class="cost">JEV 80 · ~US$0.0032</span></div>
+  <p class="why"><b>Qué cambia:</b> el código busca con las variantes dirigidas y con "fuente: frase" de cada hecho nuevo. JEV califica con el cuaderno en el state: ya sabe que R1 y R2 están cubiertos y busca lo que falta.</p>
+  <div class="io">
+    <div><span class="cap">envía (el pasaje decisivo)</span>
+<pre>{
+  <span class="k">"state"</span>: {
+    <span class="k">"query"</span>: <span class="s">"…"</span>, <span class="k">"case"</span>: { … },
+    <span class="k">"requirements"</span>: [ <span class="c">R1 ✓, R2 ✓, R3 pending, R4 pending</span> ],
+    <span class="k">"known_facts"</span>: [ <span class="c">las 2 frases del Art. 47</span> ],
+    <span class="k">"passage"</span>: { <span class="k">"title"</span>: <span class="s">"LFT › Art. 47 › párrafos finales"</span>,
+      <span class="k">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito en
+              el que refiera claramente la conducta o conductas que motivan la rescisión
+              y la fecha o fechas en que se cometieron…"</span> }
+  },
+  <span class="k">"questions"</span>: { <span class="s">"next_needed"</span>, <span class="s">"answers_query"</span>, <span class="s">"q_R3"</span>, <span class="s">"q_R4"</span> }
+}</pre></div>
+    <div><span class="cap">recibe y cuaderno actualizado</span>
+<pre>{ <span class="k">"answers"</span>: { <span class="k">"next_needed"</span>: { <span class="s">"noul"</span>: <span class="n">0.91</span> },
+               <span class="k">"q_R3"</span>: { <span class="s">"noul"</span>: <span class="n">0.95</span> }, <span class="k">"q_R4"</span>: { <span class="s">"noul"</span>: <span class="n">0.02</span> } } }</pre>
+<pre>{
+  <span class="k">"facts"</span>: [ <span class="c">… las 2 anteriores …</span>,
+    { <span class="k">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito…"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › párrafos finales"</span>, <span class="k">"covers"</span>: [<span class="s">"R3"</span>],
+      <span class="k">"via"</span>: <span class="s">"variant (kit dirigido)"</span>, <span class="k">"p"</span>: <span class="n">0.93</span> }
+  ],
+  <span class="k">"requirements"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>,
+                    <span class="s">"R3"</span>: <span class="s">"covered"</span>, <span class="s">"R4"</span>: <span class="s">"pending"</span> }
+}
+<span class="c">Del reglamento interior solo aparecieron reglas de retardos y uniforme:
+nada sobre faltas. R4 sigue pendiente.</span></pre></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">fin de la ronda 2 → revisión</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 10 REVIEW 2 -->
+<div class="node jev">
+  <div class="nhead"><h3><span class="tag t-jev">JEV · llamada 81</span> Revisión de la ronda 2</h3><span class="cost">JEV 81 · ~US$0.0033</span></div>
+  <p class="why"><b>Qué decide:</b> lo esencial está cubierto (causa, umbral, aviso); R4 no apareció ni con el kit dirigido, y no hay más pistas. Se entrega con el hueco marcado; no se sigue gastando.</p>
+  <div class="io">
+    <div><span class="cap">recibe</span>
+<pre>{
+  <span class="k">"answers"</span>: {
+    <span class="k">"answer_stated"</span>:       { <span class="s">"noul"</span>: <span class="n">0.86</span> },
+    <span class="k">"missing_link"</span>:        { <span class="s">"noul"</span>: <span class="n">0.27</span> },
+    <span class="k">"applies_to_case"</span>:     { <span class="s">"noul"</span>: <span class="n">0.88</span> },
+    <span class="k">"worth_another_round"</span>: { <span class="s">"noul"</span>: <span class="n">0.11</span> },
+    <span class="k">"user_must_clarify"</span>:   { <span class="s">"noul"</span>: <span class="n">0.14</span> }
+  }
+}</pre></div>
+    <div><span class="cap">código</span>
+<pre><span class="c">R1–R3 cubiertos · R4 sin encontrar · kit dirigido ya usado · sin pistas
+→ entregar con estado "partial" y R4 como hueco</span></pre></div>
+  </div>
+</div>
+
+<div class="fork">
+  <div class="forkbar"><div class="bar"></div></div>
+  <div class="choices">
+    <div class="choice taken"><b>Entregar (parcial)</b><span>lo esencial cubierto; R4 marcado como hueco</span></div>
+    <div class="choice ghost"><b>Otra ronda</b><span>no: worth_another_round 0.11</span></div>
+    <div class="choice ghost"><b>Otro kit</b><span>no: el kit dirigido se pide una sola vez</span></div>
+    <div class="choice ghost"><b>Pedir aclaración</b><span>no: user_must_clarify 0.14</span></div>
+  </div>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">la memoria responde al agente</div><div class="bar"></div><div class="arrow"></div></div>
+
+<!-- 11 OUTPUT -->
+<div class="node out">
+  <div class="nhead"><h3><span class="tag t-out">salida</span> Lo que recibe el agente</h3><span class="cost">total: JEV 81 · LLM 2 · ~US$0.009</span></div>
+  <p class="why"><b>Qué contiene:</b> solo frases textuales con cita, qué requisito cubre cada una, los huecos y notas sobre el caso. El agente escribe su respuesta con esto y nada más.</p>
+<pre>{
+  <span class="k">"status"</span>: <span class="s">"partial"</span>,
+  <span class="k">"facts"</span>: [
+    { <span class="k">"text"</span>: <span class="s">"Son causas de rescisión de la relación de trabajo, sin responsabilidad para el patrón:"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › encabezado"</span>, <span class="k">"covers"</span>: [<span class="s">"R1"</span>] },
+    { <span class="k">"text"</span>: <span class="s">"X. Tener el trabajador más de tres faltas de asistencia en un período de treinta días, sin permiso del patrón o sin causa justificada;"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › fracc. X"</span>, <span class="k">"covers"</span>: [<span class="s">"R2"</span>] },
+    { <span class="k">"text"</span>: <span class="s">"El patrón que despida a un trabajador deberá darle aviso escrito en el que refiera claramente la conducta o conductas que motivan la rescisión y la fecha o fechas en que se cometieron…"</span>,
+      <span class="k">"cite"</span>: <span class="s">"LFT › Art. 47 › párrafos finales"</span>, <span class="k">"covers"</span>: [<span class="s">"R3"</span>] }
+  ],
+  <span class="k">"coverage"</span>: { <span class="s">"R1"</span>: <span class="s">"covered"</span>, <span class="s">"R2"</span>: <span class="s">"covered"</span>, <span class="s">"R3"</span>: <span class="s">"covered"</span>, <span class="s">"R4"</span>: <span class="s">"not_found"</span> },
+  <span class="k">"gaps"</span>: [<span class="s">"R4: no se encontró política interna sobre faltas injustificadas"</span>],
+  <span class="k">"case_notes"</span>: [<span class="s">"El caso tiene 3 faltas; la fracción X exige más de tres en 30 días."</span>]
+}</pre>
+</div>
+
+<div class="link"><div class="bar"></div><div class="lbl">el agente responde al usuario</div><div class="bar"></div><div class="arrow"></div></div>
+
+<div class="node user">
+  <div class="nhead"><h3><span class="tag t-user">agente</span> Respuesta al usuario</h3></div>
+<pre style="white-space: pre-wrap">"Con 3 faltas todavía no. La Ley Federal del Trabajo permite rescindir sin responsabilidad para la empresa cuando el trabajador tiene MÁS de tres faltas en 30 días sin permiso ni causa justificada (art. 47, fracc. X). Si llegara a una cuarta falta, la empresa debe darle aviso escrito con la conducta y las fechas (art. 47, párrafos finales). No encontré una política interna sobre faltas que cambie esto; si existe, conviene revisarla."</pre>
+</div>
+
+</div>
+
+<div class="summary">
+  <h2>Resumen de las llamadas</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>Quién</th><th>Qué</th><th>Llamadas</th><th>Costo aprox.</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>JEV</td><td>Triaje: ¿LLM o investigar? + señales</td><td class="num">1</td><td class="num">US$0.0001</td></tr>
+      <tr><td class="num">2</td><td>JEV</td><td>¿Pedir kit ahora? (momento A) y qué piezas</td><td class="num">1</td><td class="num">US$0.0001</td></tr>
+      <tr><td class="num">3</td><td>LLM</td><td>Kit de investigación</td><td class="num">1</td><td class="num">US$0.002</td></tr>
+      <tr><td class="num">4</td><td>código</td><td>8 búsquedas (embeddings + palabras clave), fusión</td><td class="num">8 emb.</td><td class="num">US$0.0001</td></tr>
+      <tr><td class="num">5–6</td><td>JEV</td><td>Ronda 1: calificar 30 pasajes + elegir frases</td><td class="num">39</td><td class="num">US$0.0015</td></tr>
+      <tr><td class="num">7</td><td>JEV</td><td>Revisión ronda 1 → falta R3/R4, sin pistas</td><td class="num">1</td><td class="num">US$0.0001</td></tr>
+      <tr><td class="num">8</td><td>LLM</td><td>Kit dirigido al hueco (momento B)</td><td class="num">1</td><td class="num">US$0.002</td></tr>
+      <tr><td class="num">9</td><td>JEV</td><td>Ronda 2: calificar + elegir frases</td><td class="num">38</td><td class="num">US$0.0015</td></tr>
+      <tr><td class="num">10</td><td>JEV</td><td>Revisión ronda 2 → entregar parcial</td><td class="num">1</td><td class="num">US$0.0001</td></tr>
+      <tr><td></td><td></td><td><b>Total</b></td><td class="num"><b>JEV 81 · LLM 2</b></td><td class="num"><b>≈ US$0.009</b></td></tr>
+    </tbody>
+  </table></div>
+  <p class="disclaimer">Si la entrada hubiera sido "¿Cuántos días de vacaciones da la LFT el primer año?" (primer mensaje), el recorrido sería: triaje → investigar → sin señales, sin kit → ronda 1 → revisión: resuelto → entregar. Total ≈ 40 llamadas a JEV, 0 al LLM, ~US$0.0016.</p>
+</div>
+</main>
