@@ -82,6 +82,7 @@ type config struct {
 	musiqueSalt      string
 	abstain          bool
 	briefProbe       bool
+	dumpMemory       string
 	briefN           int
 	briefVariants    string
 	briefMaxUSD      float64
@@ -106,6 +107,7 @@ func parseFlags() config {
 	flag.IntVar(&c.option, "option", 1, "retrieval option 1..5 (see plan.md section 6)")
 	flag.StringVar(&c.dataset, "dataset", "koblex", "benchmark: koblex (statutes, explicit citations) or musique (Wikipedia paragraphs, inferred links, unanswerable questions)")
 	flag.StringVar(&c.musiqueSplit, "musique-split", "validation", "musique: split the memory is built from; train = fresh questions never used for tuning")
+	flag.StringVar(&c.dumpMemory, "dump-memory", "", "write the memory's paragraphs and questions (with gold keys) to this JSON file, then exit (no API calls)")
 	flag.BoolVar(&c.briefProbe, "brief-probe", false, "simulate the calling agent's search brief with Gemini (--llm-model) and measure each channel's reach on the answerable questions of --mode (no JEV), then exit")
 	flag.IntVar(&c.briefN, "brief-n", 70, "--brief-probe: questions used (multi-hop first)")
 	flag.StringVar(&c.briefVariants, "brief-variants", "knowledge,blind", "--brief-probe: knowledge (agent may use what it knows) and/or blind (private documents)")
@@ -207,6 +209,9 @@ func run(ctx context.Context, cfg config) error {
 	bench, err := loadBenchmark(ctx, hf, cfg)
 	if err != nil {
 		return err
+	}
+	if cfg.dumpMemory != "" {
+		return dumpMemory(cfg.dumpMemory, bench)
 	}
 	nodes := bench.Nodes
 	dev, test := splitQuestions(bench.Questions, cfg.devFraction)

@@ -738,3 +738,43 @@ Corrida: `--dataset koblex --mode test --explore --variants koblex --max-jev-tok
 Bucle − opción 2: R@5 −0.001 (IC95 −0.038..+0.032), cadena@10 −0.028 (−0.070..+0.014). Bucle − vector: cadena@10 +0.085 (+0.028..+0.141). Por artículos (cadena@10, bucle vs opción 2): 1 → 0.95 vs 0.95; 2 → 0.81 vs 0.85; 3 → 0.58 vs 0.62. **Lectura:** en leyes el bucle no supera al filtro simple de JEV y cuesta 2.8×; en KoBLEX los artículos necesarios casi siempre salen en la primera búsqueda (la pregunta trae el caso completo y los artículos hablan del caso), así que no hay puentes que el cuaderno pueda rescatar. El valor del cuaderno depende del tipo de pregunta: grande cuando la cadena tiene eslabones que no se parecen a la pregunta (MuSiQue), nulo cuando todo se parece a la pregunta (KoBLEX).
 
 **Síntesis de la revisión** (detalle en `docs/review/00-sintesis.md` y reportes 01–03).
+
+---
+
+## 31. Borrador — banco de conversaciones simuladas (11 de octubre de 2026)
+
+*Borrador de diseño y presupuesto. Nada se ha corrido con JEV ni con Gemini; las hipótesis se congelan después de construir el código y de una corrida en seco con juez falso (que mide los tokens exactos), y antes de la corrida pagada.*
+
+**Por qué.** Hasta ahora JEV recibió siempre una pregunta suelta. En producción llega con conversación: puede ser indispensable ("¿y dónde está enterrado él?"), útil, irrelevante, o ya traer la respuesta. Ninguno de esos casos está medido.
+
+**Set:** `data/conversations/musique-conv-v1.json`, generado y validado por `tools/conversations/musique_v1.py` (las memorias se vuelcan con `--dump-memory`, sin costo). 30 preguntas con respuesta de la memoria A de H6 (sorteo por hash `conv-v1:`+id, estratificado 18/8/4 por saltos) y 15 sin respuesta de la memoria B de H7 (mismo sorteo; se excluyeron las que repiten una pregunta de A y `4hop1__146811…`, cuyo enunciado se responde con un párrafo presente en B). 220 casos:
+
+| condición | casos | qué es | ruta esperada |
+|---|---|---|---|
+| C0 | 30 + 15 | primer mensaje, sin conversación | investigar |
+| C1 | 30 | seguimiento que depende del contexto; nunca nombra la entidad puente | investigar |
+| C2 | 30 | misma conversación, pregunta completa | investigar |
+| C3 | 30 | conversación de otro caso (irrelevante) + pregunta completa | investigar |
+| C4 | 30 | la respuesta ya se dio con cita; el usuario pregunta sobre ella | responde el LLM |
+| C5 | 30 | mensaje de conversación (gracias, resume, traduce…) | responde el LLM |
+| C6 | 15 | sin respuesta en memoria, con conversación (5 con presión: el usuario propone una respuesta) | investigar → sin evidencia |
+| C7 | 10 | el usuario afirmó antes algo falso (p. ej. "Imagine Dragons hizo I See Fire") | investigar; el cuaderno debe traer el dato real |
+
+Cinco perfiles de usuario rotan (aporta datos, novato, disperso, telegráfico, detallista): la condición es lo que se mide; el perfil es ruido que se reparte para que ningún estilo de escritura decida el resultado. En 9 de 30 casos C1 el resumen del agente omite el puente a propósito (resumen imperfecto). El agente solo afirma lo que dice un párrafo de la misma memoria y lo cita; lo demás lo aporta el usuario. El validador revisa: que ninguna conversación filtre la respuesta final (salvo C4/C5), que C1 no nombre el puente, que las citas sean títulos reales de la memoria, que C3 no mencione ninguna respuesta de la pregunta y que C6 no afirme los datos que se quitaron de la memoria B (encontró y se corrigieron 3 errores).
+
+**Diseño que se mide (opción A):** la conversación (resumen + últimos 3 mensajes del usuario) entra solo al triaje, a la revisión y al kit del LLM; calificar pasajes y frases usa la pregunta autocontenida (la reescritura del kit si JEV la pidió, si no la entrada). Opción B (conversación también al calificar) se mide como comparación. Con la opción A, C2/C3/C6 reutilizan del caché las rondas de C0 y solo pagan triaje y revisión.
+
+**Pruebas:**
+
+| prueba | pregunta | métrica | JEV (est.) |
+|---|---|---|---|
+| P1 triaje | ¿JEV manda a investigar o al LLM correctamente? | aciertos por condición, 2 repeticiones (ruido) | ~US$0.04 |
+| P2 revisión tras cada ronda (C0) | ¿detecta cuándo ya quedó resuelto? | AUROC de `answer_stated`; rondas ahorradas sin perder cadena@10 | ~US$0.02 |
+| P3 seguimientos (C1) | ¿la conversación rescata la búsqueda? | cadena@10: entrada sola (vector, gratis) · reescritura del kit · opción B; techo C0 (caché) | ~US$0.17 |
+| P4 contexto útil/irrelevante (C2, C3) | ¿el contexto cambia decisiones o estorba? | cambios de ruta y de `answer_stated` vs C0; opción B en 15 de C3 | ~US$0.10 |
+| P5 sin respuesta con contexto (C6) | ¿el contexto o la presión empujan a responder? | tasa de "hay evidencia" falsa vs C0 de B | ~US$0.05 |
+| P6 premisa falsa (C7) | ¿el error del usuario contamina la búsqueda? | cadena@10 vs C2; `contradiction` marcada | ~US$0.06 |
+
+Total JEV ~US$0.42 (±50%; cada corrida lleva `--max-jev-tokens`). Gemini: ~50 reescrituras del kit (~US$0.13 con precio de lista; US$0 con la key gratuita) y ~330 embeddings nuevos (<US$0.01). Con el saldo actual (~US$0.13 de JEV) caben P1 + P2 + la parte A de P4 (~US$0.11); P3, P5 y P6 requieren recarga.
+
+**Límites conocidos:** un solo autor escribió las conversaciones conociendo las respuestas (mitigado con reglas y validador); inglés, porque MuSiQue está en inglés; conversaciones cortas (2–6 turnos); resúmenes escritos por el autor, no por un agente real; con 30 preguntas solo se detectan efectos grandes (≈0.10 o más en cadena@10). La prueba en español con documentos reales va después.
